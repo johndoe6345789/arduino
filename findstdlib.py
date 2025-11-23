@@ -132,6 +132,24 @@ class FSPCommonInfo:
 
 
 @dataclass(frozen=True)
+class BSPCfgInfo:
+    bsp_cfg_h: Path
+    include_dir: Path
+
+
+@dataclass(frozen=True)
+class HALDataInfo:
+    hal_data_h: Path
+    include_dir: Path
+
+
+@dataclass(frozen=True)
+class CMSISInfo:
+    cmsis_h: Path
+    include_dir: Path
+
+
+@dataclass(frozen=True)
 class ComPortInfo:
     device: str
     description: str
@@ -343,6 +361,81 @@ def _dedupe_fsp_common(fsp_list: Iterable[FSPCommonInfo]) -> List[FSPCommonInfo]
     return unique
 
 
+def find_bsp_cfg_headers(base_dir: Path) -> List[BSPCfgInfo]:
+    results: List[BSPCfgInfo] = []
+
+    for header in base_dir.rglob("bsp_cfg.h"):
+        if not header.is_file():
+            continue
+        results.append(BSPCfgInfo(bsp_cfg_h=header, include_dir=header.parent))
+
+    return _dedupe_bsp_cfg(results)
+
+
+def _dedupe_bsp_cfg(bsp_cfg_list: Iterable[BSPCfgInfo]) -> List[BSPCfgInfo]:
+    seen: Set[Path] = set()
+    unique: List[BSPCfgInfo] = []
+
+    for bsp_cfg in sorted(bsp_cfg_list, key=lambda b: str(b.include_dir)):
+        if bsp_cfg.include_dir in seen:
+            continue
+        seen.add(bsp_cfg.include_dir)
+        unique.append(bsp_cfg)
+
+    return unique
+
+
+def find_hal_data_headers(base_dir: Path) -> List[HALDataInfo]:
+    results: List[HALDataInfo] = []
+
+    for header in base_dir.rglob("hal_data.h"):
+        if not header.is_file():
+            continue
+        results.append(HALDataInfo(hal_data_h=header, include_dir=header.parent))
+
+    return _dedupe_hal_data(results)
+
+
+def _dedupe_hal_data(hal_data_list: Iterable[HALDataInfo]) -> List[HALDataInfo]:
+    seen: Set[Path] = set()
+    unique: List[HALDataInfo] = []
+
+    for hal_data in sorted(hal_data_list, key=lambda h: str(h.include_dir)):
+        if hal_data.include_dir in seen:
+            continue
+        seen.add(hal_data.include_dir)
+        unique.append(hal_data)
+
+    return unique
+
+
+def find_cmsis_headers(base_dir: Path) -> List[CMSISInfo]:
+    results: List[CMSISInfo] = []
+    
+    cmsis_patterns = ("cmsis_device.h", "core_cm0.h", "core_cm3.h", "core_cm4.h", "core_cm7.h")
+
+    for pattern in cmsis_patterns:
+        for header in base_dir.rglob(pattern):
+            if not header.is_file():
+                continue
+            results.append(CMSISInfo(cmsis_h=header, include_dir=header.parent))
+
+    return _dedupe_cmsis(results)
+
+
+def _dedupe_cmsis(cmsis_list: Iterable[CMSISInfo]) -> List[CMSISInfo]:
+    seen: Set[Path] = set()
+    unique: List[CMSISInfo] = []
+
+    for cmsis in sorted(cmsis_list, key=lambda c: str(c.include_dir)):
+        if cmsis.include_dir in seen:
+            continue
+        seen.add(cmsis.include_dir)
+        unique.append(cmsis)
+
+    return unique
+
+
 def find_matching_bsp(
     bsp_list: Sequence[BSPInfo],
     ports: Sequence[ComPortInfo],
@@ -417,6 +510,120 @@ def find_matching_fsp_common(
                 return fsp, remaining
 
     return None, list(fsp_list)
+
+
+def find_matching_bsp_cfg(
+    bsp_cfg_list: Sequence[BSPCfgInfo],
+    ports: Sequence[ComPortInfo],
+) -> Tuple[Optional[BSPCfgInfo], List[BSPCfgInfo]]:
+    if not ports or not bsp_cfg_list:
+        return None, list(bsp_cfg_list)
+
+    detected_port = None
+    for p in ports:
+        if p.vid in (0x2341, 0x2A03):
+            detected_port = p
+            break
+    
+    if detected_port is None:
+        detected_port = ports[0] if ports else None
+
+    if detected_port is None:
+        return None, list(bsp_cfg_list)
+
+    board_short = short_board_name(detected_port.vid, detected_port.pid)
+    variant_names = _BOARD_TO_VARIANT.get(board_short)
+
+    if variant_names is None:
+        return None, list(bsp_cfg_list)
+
+    if not isinstance(variant_names, list):
+        variant_names = [variant_names]
+
+    for variant_name in variant_names:
+        for bsp_cfg in bsp_cfg_list:
+            bsp_cfg_path_lower = str(bsp_cfg.bsp_cfg_h).lower()
+            if variant_name.lower() in bsp_cfg_path_lower:
+                remaining = [b for b in bsp_cfg_list if b != bsp_cfg]
+                return bsp_cfg, remaining
+
+    return None, list(bsp_cfg_list)
+
+
+def find_matching_hal_data(
+    hal_data_list: Sequence[HALDataInfo],
+    ports: Sequence[ComPortInfo],
+) -> Tuple[Optional[HALDataInfo], List[HALDataInfo]]:
+    if not ports or not hal_data_list:
+        return None, list(hal_data_list)
+
+    detected_port = None
+    for p in ports:
+        if p.vid in (0x2341, 0x2A03):
+            detected_port = p
+            break
+    
+    if detected_port is None:
+        detected_port = ports[0] if ports else None
+
+    if detected_port is None:
+        return None, list(hal_data_list)
+
+    board_short = short_board_name(detected_port.vid, detected_port.pid)
+    variant_names = _BOARD_TO_VARIANT.get(board_short)
+
+    if variant_names is None:
+        return None, list(hal_data_list)
+
+    if not isinstance(variant_names, list):
+        variant_names = [variant_names]
+
+    for variant_name in variant_names:
+        for hal_data in hal_data_list:
+            hal_data_path_lower = str(hal_data.hal_data_h).lower()
+            if variant_name.lower() in hal_data_path_lower:
+                remaining = [h for h in hal_data_list if h != hal_data]
+                return hal_data, remaining
+
+    return None, list(hal_data_list)
+
+
+def find_matching_cmsis(
+    cmsis_list: Sequence[CMSISInfo],
+    ports: Sequence[ComPortInfo],
+) -> Tuple[Optional[CMSISInfo], List[CMSISInfo]]:
+    if not ports or not cmsis_list:
+        return None, list(cmsis_list)
+
+    detected_port = None
+    for p in ports:
+        if p.vid in (0x2341, 0x2A03):
+            detected_port = p
+            break
+    
+    if detected_port is None:
+        detected_port = ports[0] if ports else None
+
+    if detected_port is None:
+        return None, list(cmsis_list)
+
+    board_short = short_board_name(detected_port.vid, detected_port.pid)
+    variant_names = _BOARD_TO_VARIANT.get(board_short)
+
+    if variant_names is None:
+        return None, list(cmsis_list)
+
+    if not isinstance(variant_names, list):
+        variant_names = [variant_names]
+
+    for variant_name in variant_names:
+        for cmsis in cmsis_list:
+            cmsis_path_lower = str(cmsis.cmsis_h).lower()
+            if variant_name.lower() in cmsis_path_lower:
+                remaining = [c for c in cmsis_list if c != cmsis]
+                return cmsis, remaining
+
+    return None, list(cmsis_list)
 
 
 # =========================
@@ -802,6 +1009,111 @@ def print_fsp_common(fsp_list: Sequence[FSPCommonInfo], ports: Sequence[ComPortI
             print()
 
 
+def print_bsp_cfg(bsp_cfg_list: Sequence[BSPCfgInfo], ports: Sequence[ComPortInfo]) -> None:
+    print_section("BSP Configuration (bsp_cfg.h)")
+    print(f"Discovered BSP config headers: {len(bsp_cfg_list)}\n")
+
+    if not bsp_cfg_list:
+        print("No BSP config headers (bsp_cfg.h) found.\n")
+        return
+
+    matched_bsp_cfg, remaining = find_matching_bsp_cfg(bsp_cfg_list, ports)
+
+    if matched_bsp_cfg is not None:
+        print("[BSP Config #1] [MATCHED TO DETECTED BOARD]")
+        print("  bsp_cfg.h full path:")
+        print(indent(str(matched_bsp_cfg.bsp_cfg_h), "    "))
+        print("  Include directory (-I):")
+        print(indent(str(matched_bsp_cfg.include_dir), "    "))
+        print()
+
+        for idx, bsp_cfg in enumerate(remaining, start=2):
+            print(f"[BSP Config #{idx}]")
+            print("  bsp_cfg.h full path:")
+            print(indent(str(bsp_cfg.bsp_cfg_h), "    "))
+            print("  Include directory (-I):")
+            print(indent(str(bsp_cfg.include_dir), "    "))
+            print()
+    else:
+        for idx, bsp_cfg in enumerate(bsp_cfg_list, start=1):
+            print(f"[BSP Config #{idx}]")
+            print("  bsp_cfg.h full path:")
+            print(indent(str(bsp_cfg.bsp_cfg_h), "    "))
+            print("  Include directory (-I):")
+            print(indent(str(bsp_cfg.include_dir), "    "))
+            print()
+
+
+def print_hal_data(hal_data_list: Sequence[HALDataInfo], ports: Sequence[ComPortInfo]) -> None:
+    print_section("HAL Data (hal_data.h)")
+    print(f"Discovered HAL data headers: {len(hal_data_list)}\n")
+
+    if not hal_data_list:
+        print("No HAL data headers (hal_data.h) found.\n")
+        return
+
+    matched_hal_data, remaining = find_matching_hal_data(hal_data_list, ports)
+
+    if matched_hal_data is not None:
+        print("[HAL Data #1] [MATCHED TO DETECTED BOARD]")
+        print("  hal_data.h full path:")
+        print(indent(str(matched_hal_data.hal_data_h), "    "))
+        print("  Include directory (-I):")
+        print(indent(str(matched_hal_data.include_dir), "    "))
+        print()
+
+        for idx, hal_data in enumerate(remaining, start=2):
+            print(f"[HAL Data #{idx}]")
+            print("  hal_data.h full path:")
+            print(indent(str(hal_data.hal_data_h), "    "))
+            print("  Include directory (-I):")
+            print(indent(str(hal_data.include_dir), "    "))
+            print()
+    else:
+        for idx, hal_data in enumerate(hal_data_list, start=1):
+            print(f"[HAL Data #{idx}]")
+            print("  hal_data.h full path:")
+            print(indent(str(hal_data.hal_data_h), "    "))
+            print("  Include directory (-I):")
+            print(indent(str(hal_data.include_dir), "    "))
+            print()
+
+
+def print_cmsis(cmsis_list: Sequence[CMSISInfo], ports: Sequence[ComPortInfo]) -> None:
+    print_section("CMSIS Headers")
+    print(f"Discovered CMSIS headers: {len(cmsis_list)}\n")
+
+    if not cmsis_list:
+        print("No CMSIS headers found.\n")
+        return
+
+    matched_cmsis, remaining = find_matching_cmsis(cmsis_list, ports)
+
+    if matched_cmsis is not None:
+        print("[CMSIS #1] [MATCHED TO DETECTED BOARD]")
+        print("  Header full path:")
+        print(indent(str(matched_cmsis.cmsis_h), "    "))
+        print("  Include directory (-I):")
+        print(indent(str(matched_cmsis.include_dir), "    "))
+        print()
+
+        for idx, cmsis in enumerate(remaining, start=2):
+            print(f"[CMSIS #{idx}]")
+            print("  Header full path:")
+            print(indent(str(cmsis.cmsis_h), "    "))
+            print("  Include directory (-I):")
+            print(indent(str(cmsis.include_dir), "    "))
+            print()
+    else:
+        for idx, cmsis in enumerate(cmsis_list, start=1):
+            print(f"[CMSIS #{idx}]")
+            print("  Header full path:")
+            print(indent(str(cmsis.cmsis_h), "    "))
+            print("  Include directory (-I):")
+            print(indent(str(cmsis.include_dir), "    "))
+            print()
+
+
 def print_com_ports(ports: Sequence[ComPortInfo]) -> None:
     print_section("Serial / COM ports")
 
@@ -845,9 +1157,18 @@ def print_suggested_flags(
     extra_core_includes: Set[Path],
     extra_tc_includes: Set[Path],
     fsp_headers: Sequence[FSPCommonInfo] = None,
+    bsp_cfg_headers: Sequence[BSPCfgInfo] = None,
+    hal_data_headers: Sequence[HALDataInfo] = None,
+    cmsis_headers: Sequence[CMSISInfo] = None,
 ) -> None:
     if fsp_headers is None:
         fsp_headers = []
+    if bsp_cfg_headers is None:
+        bsp_cfg_headers = []
+    if hal_data_headers is None:
+        hal_data_headers = []
+    if cmsis_headers is None:
+        cmsis_headers = []
 
     print_section("Suggested -I include flags")
 
@@ -888,10 +1209,37 @@ def print_suggested_flags(
 
     print()
 
+    print("BSP Configuration include paths:")
+    if bsp_cfg_headers:
+        for b in bsp_cfg_headers:
+            print(f'  -I"{b.include_dir}"')
+    else:
+        print("  (none found)")
+
+    print()
+
+    print("HAL Data include paths:")
+    if hal_data_headers:
+        for h in hal_data_headers:
+            print(f'  -I"{h.include_dir}"')
+    else:
+        print("  (none found)")
+
+    print()
+
     print("FSP Common API include paths:")
     if fsp_headers:
         for f in fsp_headers:
             print(f'  -I"{f.include_dir}"')
+    else:
+        print("  (none found)")
+
+    print()
+
+    print("CMSIS include paths:")
+    if cmsis_headers:
+        for c in cmsis_headers:
+            print(f'  -I"{c.include_dir}"')
     else:
         print("  (none found)")
 
@@ -919,6 +1267,9 @@ def main(argv: Sequence[str]) -> None:
     toolchains = find_stdlib_headers(base_dir)
     bsp_headers = find_bsp_api_headers(base_dir)
     fsp_common_headers = find_fsp_common_api_headers(base_dir)
+    bsp_cfg_headers = find_bsp_cfg_headers(base_dir)
+    hal_data_headers = find_hal_data_headers(base_dir)
+    cmsis_headers = find_cmsis_headers(base_dir)
 
     extra_core_includes: Set[Path] = set()
     extra_tc_includes: Set[Path] = set()
@@ -927,13 +1278,22 @@ def main(argv: Sequence[str]) -> None:
     print_toolchains(toolchains, extra_tc_includes)
     print_bsp(bsp_headers, ports)
     print_fsp_common(fsp_common_headers, ports)
+    print_bsp_cfg(bsp_cfg_headers, ports)
+    print_hal_data(hal_data_headers, ports)
+    print_cmsis(cmsis_headers, ports)
     print_com_ports(ports)
     
     matched_bsp, _ = find_matching_bsp(bsp_headers, ports)
     suggested_bsp = [matched_bsp] if matched_bsp else bsp_headers
     matched_fsp, _ = find_matching_fsp_common(fsp_common_headers, ports)
     suggested_fsp = [matched_fsp] if matched_fsp else fsp_common_headers
-    print_suggested_flags(cores, toolchains, suggested_bsp, extra_core_includes, extra_tc_includes, suggested_fsp)
+    matched_bsp_cfg, _ = find_matching_bsp_cfg(bsp_cfg_headers, ports)
+    suggested_bsp_cfg = [matched_bsp_cfg] if matched_bsp_cfg else bsp_cfg_headers
+    matched_hal_data, _ = find_matching_hal_data(hal_data_headers, ports)
+    suggested_hal_data = [matched_hal_data] if matched_hal_data else hal_data_headers
+    matched_cmsis, _ = find_matching_cmsis(cmsis_headers, ports)
+    suggested_cmsis = [matched_cmsis] if matched_cmsis else cmsis_headers
+    print_suggested_flags(cores, toolchains, suggested_bsp, extra_core_includes, extra_tc_includes, suggested_fsp, suggested_bsp_cfg, suggested_hal_data, suggested_cmsis)
 
 
 if __name__ == "__main__":

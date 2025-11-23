@@ -90,23 +90,92 @@ FSP Common API (fsp_common_api.h)
 ========================================================================
 Discovered FSP common headers: 3
 
-[FSP #1]
-  fsp_common_api.h full path:
-    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\MINIMA\includes\ra\fsp\inc\fsp_common_api.h
-  Include directory (-I):
-    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\MINIMA\includes\ra\fsp\inc
-
-[FSP #2]
+[FSP #1] [MATCHED TO DETECTED BOARD]
   fsp_common_api.h full path:
     C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\NANOR4\includes\ra\fsp\inc\fsp_common_api.h
   Include directory (-I):
     C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\NANOR4\includes\ra\fsp\inc
+
+[FSP #2]
+  fsp_common_api.h full path:
+    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\MINIMA\includes\ra\fsp\inc\fsp_common_api.h
+  Include directory (-I):
+    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\MINIMA\includes\ra\fsp\inc
 
 [FSP #3]
   fsp_common_api.h full path:
     C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\UNOWIFIR4\includes\ra\fsp\inc\fsp_common_api.h
   Include directory (-I):
     C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\UNOWIFIR4\includes\ra\fsp\inc
+
+========================================================================
+BSP Configuration (bsp_cfg.h)
+========================================================================
+Discovered BSP config headers: 3
+
+[BSP Config #1] [MATCHED TO DETECTED BOARD]
+  bsp_cfg.h full path:
+    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\NANOR4\includes\ra_cfg\fsp_cfg\bsp\bsp_cfg.h
+  Include directory (-I):
+    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\NANOR4\includes\ra_cfg\fsp_cfg\bsp
+
+[BSP Config #2]
+  bsp_cfg.h full path:
+    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\MINIMA\includes\ra_cfg\fsp_cfg\bsp\bsp_cfg.h
+  Include directory (-I):
+    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\MINIMA\includes\ra_cfg\fsp_cfg\bsp
+
+[BSP Config #3]
+  bsp_cfg.h full path:
+    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\UNOWIFIR4\includes\ra_cfg\fsp_cfg\bsp\bsp_cfg.h
+  Include directory (-I):
+    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\UNOWIFIR4\includes\ra_cfg\fsp_cfg\bsp
+
+========================================================================
+HAL Data (hal_data.h)
+========================================================================
+Discovered HAL data headers: 3
+
+[HAL Data #1] [MATCHED TO DETECTED BOARD]
+  hal_data.h full path:
+    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\NANOR4\includes\ra_gen\hal_data.h
+  Include directory (-I):
+    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\NANOR4\includes\ra_gen
+
+[HAL Data #2]
+  hal_data.h full path:
+    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\MINIMA\includes\ra_gen\hal_data.h
+  Include directory (-I):
+    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\MINIMA\includes\ra_gen
+
+[HAL Data #3]
+  hal_data.h full path:
+    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\UNOWIFIR4\includes\ra_gen\hal_data.h
+  Include directory (-I):
+    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\UNOWIFIR4\includes\ra_gen
+
+========================================================================
+CMSIS Headers
+========================================================================
+Discovered CMSIS headers: 3
+
+[CMSIS #1] [MATCHED TO DETECTED BOARD]
+  Header full path:
+    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\NANOR4\includes\ra\arm\CMSIS_5\CMSIS\Core\Include\core_cm0.h
+  Include directory (-I):
+    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\NANOR4\includes\ra\arm\CMSIS_5\CMSIS\Core\Include
+
+[CMSIS #2]
+  Header full path:
+    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\MINIMA\includes\ra\arm\CMSIS_5\CMSIS\Core\Include\core_cm0.h
+  Include directory (-I):
+    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\MINIMA\includes\ra\arm\CMSIS_5\CMSIS\Core\Include
+
+[CMSIS #3]
+  Header full path:
+    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\UNOWIFIR4\includes\ra\arm\CMSIS_5\CMSIS\Core\Include\core_cm0.h
+  Include directory (-I):
+    C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\UNOWIFIR4\includes\ra\arm\CMSIS_5\CMSIS\Core\Include
 
 ========================================================================
 Serial / COM ports
@@ -139,4 +208,16 @@ Extra toolchain friend include paths:
 
 BSP API include paths:
   -I"C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\NANOR4\includes\ra\fsp\inc\api"
+
+BSP Configuration include paths:
+  -I"C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\NANOR4\includes\ra_cfg\fsp_cfg\bsp"
+
+HAL Data include paths:
+  -I"C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\NANOR4\includes\ra_gen"
+
+FSP Common API include paths:
+  -I"C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\NANOR4\includes\ra\fsp\inc"
+
+CMSIS include paths:
+  -I"C:\Users\richa\Documents\ArduinoData\packages\arduino\hardware\renesas_uno\1.5.1\variants\NANOR4\includes\ra\arm\CMSIS_5\CMSIS\Core\Include"
 
