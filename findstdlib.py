@@ -141,6 +141,7 @@ STRINGS: Dict[str, str] = {
     "flags_group_r_cgc": "R_CGC",
     "flags_group_r_cgc_cfg": "R_CGC Configuration",
     "flags_group_fsp_module_cfg": "FSP Module Configuration",
+    "flags_group_pins": "Variant pins (pins_arduino.h)",
 
     # Header generic section text
     "section_header_discovered": "{label}: {count}",
@@ -182,11 +183,14 @@ STRINGS: Dict[str, str] = {
     "section_fsp_module_cfg_title": "FSP Module Configuration (r_*_cfg.h)",
     "section_fsp_module_cfg_discovered": "Discovered FSP module config headers",
     "section_fsp_module_cfg_none": "No FSP module config headers (r_*_cfg.h) found.",
+
+    "section_pins_title": "Variant pins (pins_arduino.h)",
+    "section_pins_discovered": "Discovered pins_arduino.h headers",
+    "section_pins_none": "No pins_arduino.h headers found.",
 }
 
 
 def S(key: str) -> str:
-    # Strict lookup; if you want softer behavior, change to .get with fallback
     return STRINGS[key]
 
 
@@ -285,6 +289,7 @@ class HeaderGroupConfig(TypedDict):
 
 
 HEADER_GROUP_ORDER: Tuple[str, ...] = (
+    "pins_arduino",
     "bsp",
     "fsp_common",
     "bsp_cfg",
@@ -368,6 +373,15 @@ HEADER_GROUPS: Dict[str, HeaderGroupConfig] = {
         "header_attr": "cfg_h",
         "include_attr": "include_dir",
     },
+    "pins_arduino": {
+        "section_title_key": "section_pins_title",
+        "discovered_label_key": "section_pins_discovered",
+        "none_found_key": "section_pins_none",
+        "item_label": "Variant pins",
+        "header_desc": "pins_arduino.h",
+        "header_attr": "pins_arduino_h",
+        "include_attr": "include_dir",
+    },
 }
 
 FLAGS_GROUP_LABEL_KEYS: Dict[str, str] = {
@@ -379,6 +393,22 @@ FLAGS_GROUP_LABEL_KEYS: Dict[str, str] = {
     "r_cgc": "flags_group_r_cgc",
     "r_cgc_cfg": "flags_group_r_cgc_cfg",
     "fsp_module_cfg": "flags_group_fsp_module_cfg",
+    "pins_arduino": "flags_group_pins",
+}
+
+# Scan configuration (logical collection key -> dotted finder name)
+SCAN_FINDER_FUNCTIONS: Dict[str, str] = {
+    "cores": "HeaderScans.find_arduino_headers",
+    "toolchains": "HeaderScans.find_stdlib_headers",
+    "bsp": "HeaderScans.find_bsp_api_headers",
+    "fsp_common": "HeaderScans.find_fsp_common_api_headers",
+    "bsp_cfg": "HeaderScans.find_bsp_cfg_headers",
+    "hal_data": "HeaderScans.find_hal_data_headers",
+    "cmsis": "HeaderScans.find_cmsis_headers",
+    "r_cgc": "HeaderScans.find_r_cgc_headers",
+    "r_cgc_cfg": "HeaderScans.find_r_cgc_cfg_headers",
+    "fsp_module_cfg": "HeaderScans.find_fsp_module_cfg_headers",
+    "pins_arduino": "HeaderScans.find_pins_arduino_headers",
 }
 
 VID_PID_TO_STRING_KEY: Dict[Tuple[int, int], str] = {
@@ -495,6 +525,12 @@ class FSPModuleCfgInfo:
 
 
 @dataclass(frozen=True)
+class PinsInfo:
+    pins_arduino_h: Path
+    include_dir: Path
+
+
+@dataclass(frozen=True)
 class ComPortInfo:
     device: str
     description: str
@@ -510,879 +546,930 @@ class HasIncludeDir(Protocol):
 
 
 TInclude = TypeVar("TInclude", bound=HasIncludeDir)
-
-
-# =========================
-# Generic helpers
-# =========================
-
-def _dedupe_by_include_dir(items: Iterable[TInclude]) -> List[TInclude]:
-    seen: Set[Path] = set()
-    unique: List[TInclude] = []
-
-    for item in sorted(items, key=lambda x: str(x.include_dir)):
-        if item.include_dir in seen:
-            continue
-        seen.add(item.include_dir)
-        unique.append(item)
-
-    return unique
-
-
-def _select_detected_port(
-    ports: Sequence[ComPortInfo],
-) -> Optional[ComPortInfo]:
-    if not ports:
-        return None
-
-    for port in ports:
-        if port.vid in ARDUINO_VIDS:
-            return port
-
-    return ports[0]
-
-
-def _variant_names_for_ports(
-    ports: Sequence[ComPortInfo],
-) -> List[str]:
-    detected = _select_detected_port(ports)
-    if detected is None:
-        return []
-
-    board_short = short_board_name(detected.vid, detected.pid)
-    variant_names = BOARD_VARIANTS.get(board_short)
-
-    if not variant_names:
-        return []
-
-    return list(variant_names)
-
-
-def _match_header_by_variants(
-    items: Sequence[object],
-    ports: Sequence[ComPortInfo],
-    path_getter: Callable[[object], Path],
-) -> Tuple[Optional[object], List[object]]:
-    if not items:
-        return None, list(items)
-
-    variant_names = _variant_names_for_ports(ports)
-    if not variant_names:
-        return None, list(items)
-
-    for variant_name in variant_names:
-        variant_lower = variant_name.lower()
-        for item in items:
-            if variant_lower in str(path_getter(item)).lower():
-                remaining = [i for i in items if i is not item]
-                return item, remaining
-
-    return None, list(items)
-
-
-def _print_matched_headers(
-    section_title: str,
-    discovered_label: str,
-    none_found_msg: str,
-    item_label: str,
-    header_desc: str,
-    items: Sequence[object],
-    ports: Sequence[ComPortInfo],
-    header_attr: str,
-    include_attr: str,
-) -> None:
-    print_section(section_title)
-    print(
-        S("section_header_discovered").format(
-            label=discovered_label,
-            count=len(items),
-        )
-    )
-    print()
-
-    if not items:
-        print(S("section_header_none").format(message=none_found_msg))
-        print()
-        return
-
-    def _header_path(item: object) -> Path:
-        return cast(Path, getattr(item, header_attr))
-
-    def _include_dir(item: object) -> Path:
-        return cast(Path, getattr(item, include_attr))
-
-    matched, remaining = _match_header_by_variants(items, ports, _header_path)
-
-    def _print_item(idx: int, item: object, matched_flag: bool) -> None:
-        suffix = S("section_header_match_suffix") if matched_flag else ""
-        print(
-            S("section_header_item_header").format(
-                item_label=item_label,
-                index=idx,
-                suffix=suffix,
-            )
-        )
-        print(S("section_header_full_path").format(desc=header_desc))
-        print(indent(str(_header_path(item)), "    "))
-        print(S("section_header_include_dir"))
-        print(indent(str(_include_dir(item)), "    "))
-        print()
-
-    if matched is not None:
-        _print_item(1, matched, True)
-        for idx, item in enumerate(remaining, start=2):
-            _print_item(idx, item, False)
-    else:
-        for idx, item in enumerate(items, start=1):
-            _print_item(idx, item, False)
-
-
-# =========================
-# ASCII logo
-# =========================
-
-def render_big_text(
-    text: str,
-    on: str = "#",
-    off: str = " ",
-    spacing: int = 1,
-    scale: int = 1,
-) -> str:
-    text = text.upper()
-    rows: List[str] = []
-
-    for row in range(7):
-        line_chunks: List[str] = []
-        for char in text:
-            glyph = FONT.get(char, FONT[" "])
-            bits = glyph[row]
-            pixels: List[str] = []
-
-            for col in range(4, -1, -1):
-                filled = bool(bits & (1 << col))
-                pixels.append(on if filled else off)
-
-            scaled = "".join(ch * scale for ch in pixels)
-            line_chunks.append(scaled)
-
-        line = (" " * spacing).join(line_chunks)
-
-        for _ in range(scale):
-            rows.append(line)
-
-    return "\n".join(rows)
-
-
-def print_ascii_logo(title: str) -> None:
-    art = render_big_text(title, on="#", off=" ", spacing=1, scale=1)
-    print(art)
-    print("-" * max(len(line) for line in art.splitlines()))
-    print()
-
-
-# =========================
-# pyserial handling
-# =========================
-
-def ensure_pyserial() -> Optional[Any]:
-    try:
-        from serial.tools import list_ports  # type: ignore[import]
-        print(S("pyserial_already"))
-        return list_ports
-    except Exception:
-        print(S("pyserial_not_installed"))
-
-    cmd_list = [
-        sys.executable,
-        "-m",
-        "pip",
-        "install",
-        "--user",
-        "pyserial",
-    ]
-    cmd_str = " ".join(cmd_list)
-    print(S("pyserial_running_cmd").format(cmd=cmd_str))
-
-    try:
-        proc = subprocess.run(
-            cmd_list,
-            text=True,
-            capture_output=True,
-        )
-    except Exception as exc:
-        print(S("pyserial_pip_failed").format(exc=exc))
-        return None
-
-    print(S("pyserial_pip_exit").format(code=proc.returncode))
-
-    if proc.stdout.strip():
-        print(S("pyserial_pip_stdout_header"))
-        print(proc.stdout.strip())
-    if proc.stderr.strip():
-        print(S("pyserial_pip_stderr_header"))
-        print(proc.stderr.strip())
-
-    if proc.returncode != 0:
-        print(S("pyserial_install_failed"))
-        return None
-
-    try:
-        from serial.tools import list_ports  # type: ignore[import]
-        print(S("pyserial_import_after_install_ok"))
-        return list_ports
-    except Exception as exc:
-        print(S("pyserial_import_after_install_failed").format(exc=exc))
-        return None
-
-
-# =========================
-# Utility helpers
-# =========================
-
-def resolve_base_dir(cli_base_dir: Optional[str]) -> Path:
-    if cli_base_dir:
-        return Path(cli_base_dir).expanduser().resolve()
-
-    home = Path.home()
-    candidates = [
-        home / "Documents" / "ArduinoData",
-        home / "AppData" / "Local" / "Arduino15",
-    ]
-
-    for candidate in candidates:
-        if candidate.is_dir():
-            return candidate
-
-    return Path.cwd()
-
-
-def path_contains_any(path: Path, tokens: Sequence[str]) -> bool:
-    lower = str(path).lower()
-    return any(token in lower for token in tokens)
-
-
-# =========================
-# Arduino core discovery
-# =========================
-
-def find_arduino_headers(base_dir: Path) -> List[CoreInfo]:
-    results: List[CoreInfo] = []
-
-    for header in base_dir.rglob("Arduino.h"):
-        parts = [part.lower() for part in header.parts]
-        if "cores" not in parts:
-            continue
-        results.append(CoreInfo(arduino_h=header, include_dir=header.parent))
-
-    return _dedupe_by_include_dir(results)
-
-
-# =========================
-# Toolchain discovery
-# =========================
-
-def _find_compiler(include_dir: Path) -> Optional[Path]:
-    compiler_names = [
-        "arm-none-eabi-gcc",
-        "arm-none-eabi-g++",
-        "gcc",
-        "g++",
-        "cc",
-        "c++",
-    ]
-
-    parents = [include_dir.parent] + list(include_dir.parents[:3])
-
-    for parent in parents:
-        bin_dir = parent / "bin"
-        if not bin_dir.is_dir():
-            continue
-
-        for name in compiler_names:
-            compiler = (
-                bin_dir / f"{name}.exe"
-                if platform.system() == "Windows"
-                else bin_dir / name
-            )
-            if compiler.is_file():
-                return compiler
-
-    return None
-
-
-def find_stdlib_headers(base_dir: Path) -> List[ToolchainInfo]:
-    results: List[ToolchainInfo] = []
-
-    for header in base_dir.rglob("stdlib.h"):
-        if not header.is_file():
-            continue
-        if header.parent.name != "include":
-            continue
-        if not path_contains_any(header, TOOLCHAIN_TOKENS):
-            continue
-        compiler = _find_compiler(header.parent)
-        results.append(
-            ToolchainInfo(
-                stdlib_h=header,
-                include_dir=header.parent,
-                compiler_path=compiler,
-            )
-        )
-
-    return _dedupe_by_include_dir(results)
-
-
-# =========================
-# BSP / FSP discovery
-# =========================
-
-def find_bsp_api_headers(base_dir: Path) -> List[BSPInfo]:
-    results: List[BSPInfo] = []
-
-    for header in base_dir.rglob("bsp_api.h"):
-        if not header.is_file():
-            continue
-        results.append(BSPInfo(bsp_api_h=header, include_dir=header.parent))
-
-    return _dedupe_by_include_dir(results)
-
-
-def find_fsp_common_api_headers(base_dir: Path) -> List[FSPCommonInfo]:
-    results: List[FSPCommonInfo] = []
-
-    for header in base_dir.rglob("fsp_common_api.h"):
-        if not header.is_file():
-            continue
-        results.append(
-            FSPCommonInfo(fsp_common_api_h=header, include_dir=header.parent)
-        )
-
-    return _dedupe_by_include_dir(results)
-
-
-def find_bsp_cfg_headers(base_dir: Path) -> List[BSPCfgInfo]:
-    results: List[BSPCfgInfo] = []
-
-    for header in base_dir.rglob("bsp_cfg.h"):
-        if not header.is_file():
-            continue
-        results.append(BSPCfgInfo(bsp_cfg_h=header, include_dir=header.parent))
-
-    return _dedupe_by_include_dir(results)
-
-
-def find_hal_data_headers(base_dir: Path) -> List[HALDataInfo]:
-    results: List[HALDataInfo] = []
-
-    for header in base_dir.rglob("hal_data.h"):
-        if not header.is_file():
-            continue
-        results.append(HALDataInfo(hal_data_h=header, include_dir=header.parent))
-
-    return _dedupe_by_include_dir(results)
-
-
-def find_cmsis_headers(base_dir: Path) -> List[CMSISInfo]:
-    results: List[CMSISInfo] = []
-    cmsis_patterns = (
-        "cmsis_device.h",
-        "core_cm0.h",
-        "core_cm3.h",
-        "core_cm4.h",
-        "core_cm7.h",
-    )
-
-    for pattern in cmsis_patterns:
-        for header in base_dir.rglob(pattern):
-            if not header.is_file():
-                continue
-            results.append(CMSISInfo(cmsis_h=header, include_dir=header.parent))
-
-    return _dedupe_by_include_dir(results)
-
-
-def find_r_cgc_headers(base_dir: Path) -> List[RCGCInfo]:
-    results: List[RCGCInfo] = []
-
-    for header in base_dir.rglob("r_cgc.h"):
-        if not header.is_file():
-            continue
-        results.append(RCGCInfo(r_cgc_h=header, include_dir=header.parent))
-
-    return _dedupe_by_include_dir(results)
-
-
-def find_r_cgc_cfg_headers(base_dir: Path) -> List[RCGCCfgInfo]:
-    results: List[RCGCCfgInfo] = []
-
-    for header in base_dir.rglob("r_cgc_cfg.h"):
-        if not header.is_file():
-            continue
-        results.append(RCGCCfgInfo(r_cgc_cfg_h=header, include_dir=header.parent))
-
-    return _dedupe_by_include_dir(results)
-
-
-def find_fsp_module_cfg_headers(base_dir: Path) -> List[FSPModuleCfgInfo]:
-    results: List[FSPModuleCfgInfo] = []
-
-    for header in base_dir.rglob("r_*_cfg.h"):
-        if not header.is_file():
-            continue
-        if header.name == "r_cgc_cfg.h":
-            continue
-        results.append(FSPModuleCfgInfo(cfg_h=header, include_dir=header.parent))
-
-    return _dedupe_by_include_dir(results)
-
-
-# =========================
-# Header "friends"
-# =========================
-
-def friends_status(
-    include_dir: Path,
-    friends: Sequence[str],
-    search_root: Optional[Path],
-) -> List[Tuple[str, List[Path]]]:
-    statuses: List[Tuple[str, List[Path]]] = []
-
-    for name in sorted(friends):
-        primary = include_dir / name
-        found: List[Path] = []
-
-        if primary.is_file():
-            found.append(primary)
-
-        if not found and search_root is not None and search_root.is_dir():
-            for candidate in search_root.rglob(name):
-                if not candidate.is_file():
-                    continue
-                if candidate == primary:
-                    continue
-                found.append(candidate)
-                break
-
-        statuses.append((name, found))
-
-    return statuses
-
-
-def _print_friend_headers(
-    label: str,
-    include_dir: Path,
-    friends: Sequence[str],
-    search_root: Path,
-    extra_includes: Set[Path],
-) -> None:
-    print(S("friends_label_generic").format(label=label))
-    status_list = friends_status(include_dir, friends, search_root)
-    for name, paths in status_list:
-        primary = include_dir / name
-        if not paths:
-            print(S("friends_missing").format(name=name, root=search_root))
-            continue
-        for path in paths:
-            tag = S("friends_ok") if path == primary else S("friends_alt")
-            print(f"    {tag}  {name} -> {path}")
-            if path.parent != include_dir:
-                extra_includes.add(path.parent)
-
-
-# =========================
-# COM port detection + board guessing
-# =========================
-
-def guess_board(vid: Optional[int], pid: Optional[int]) -> str:
-    if vid is None or pid is None:
-        return S("board_unknown_no_vid_pid")
-
-    key = (vid, pid)
-    string_key = VID_PID_TO_STRING_KEY.get(key)
-
-    if string_key is not None:
-        return S(string_key)
-
-    if vid in ARDUINO_VIDS:
-        return S("board_arduino_exact_unknown")
-    if vid == 0x1A86:
-        return S("board_ch340_based")
-    if vid == 0x10C4:
-        return S("board_cp210x_based")
-
-    return S("board_unknown_unmapped")
-
-
-def short_board_name(vid: Optional[int], pid: Optional[int]) -> str:
-    if vid is None or pid is None:
-        return "SCAN"
-
-    key = (vid, pid)
-
-    if key in SHORT_NAME_MAP:
-        return SHORT_NAME_MAP[key]
-
-    if vid in VENDOR_SHORT_FALLBACK:
-        return VENDOR_SHORT_FALLBACK[vid]
-
-    if vid in ARDUINO_VIDS:
-        return "ARDUINO"
-
-    return "SCAN"
-
-
-def scan_com_ports(list_ports_module: Optional[Any]) -> List[ComPortInfo]:
-    if list_ports_module is None:
-        return []
-
-    ports = list_ports_module.comports()  # type: ignore[attr-defined]
-    results: List[ComPortInfo] = []
-
-    for port in ports:
-        vid = getattr(port, "vid", None)
-        pid = getattr(port, "pid", None)
-        manufacturer = getattr(port, "manufacturer", None)
-        product = getattr(port, "product", None)
-
-        results.append(
-            ComPortInfo(
-                device=str(port.device),
-                description=str(port.description),
-                hwid=str(port.hwid),
-                vid=vid,
-                pid=pid,
-                manufacturer=manufacturer,
-                product=product,
-            )
-        )
-
-    return results
-
-
-def derive_banner_title(ports: Sequence[ComPortInfo]) -> str:
-    if not ports:
-        return S("banner_default")
-
-    arduino_ports: List[ComPortInfo] = []
-    other_ports: List[ComPortInfo] = []
-
-    for port in ports:
-        if port.vid in ARDUINO_VIDS:
-            arduino_ports.append(port)
-        else:
-            other_ports.append(port)
-
-    if arduino_ports:
-        target = arduino_ports[0]
-    else:
-        target = other_ports[0] if other_ports else None
-
-    if target is None:
-        return S("banner_default")
-
-    short = short_board_name(target.vid, target.pid)
-    return S("banner_arduino_prefix").format(short=short)
-
-
-# =========================
-# Pretty printing helpers
-# =========================
-
-def print_rule(char: str = "─", width: int = 72) -> None:
-    print(char * width)
-
-
-def print_section(title: str) -> None:
-    print_rule("=")
-    print(title)
-    print_rule("=")
-
-
-def indent(text: str, prefix: str = "  ") -> str:
-    return "\n".join(prefix + line for line in text.splitlines())
-
-
-# =========================
-# Neofetch-style printing
-# =========================
-
-def print_system_neofetch(base_dir: Path) -> None:
-    print_section(S("section_neofetch_title"))
-    print(S("neofetch_user_label").format(value=Path.home().name))
-    print(
-        S("neofetch_os_label").format(
-            value=f"{platform.system()} {platform.release()}",
-        )
-    )
-    print(S("neofetch_python_label").format(value=platform.python_version()))
-    print(S("neofetch_arch_label").format(value=platform.machine()))
-    print(S("neofetch_arduino_dir_label").format(value=base_dir))
-    print(S("neofetch_python_exe_label").format(value=sys.executable))
-    print()
-
-
-def print_cores(
-    cores: Sequence[CoreInfo],
-    extra_core_includes: Set[Path],
-) -> None:
-    print_section(S("section_cores_title"))
-    print(S("section_cores_discovered").format(count=len(cores)))
-    print()
-
-    if not cores:
-        print(S("section_cores_none"))
-        print()
-        return
-
-    for idx, core in enumerate(cores, start=1):
-        print(S("section_core_header").format(index=idx))
-        print(S("section_core_arduino_path"))
-        print(indent(str(core.arduino_h), "    "))
-        print(S("section_core_include_dir"))
-        print(indent(str(core.include_dir), "    "))
-
-        parents = list(core.include_dir.parents)
-        hw_root = parents[2] if len(parents) > 2 else core.include_dir
-
-        _print_friend_headers(
-            label=S("friends_label_core"),
-            include_dir=core.include_dir,
-            friends=CORE_FRIENDS,
-            search_root=hw_root,
-            extra_includes=extra_core_includes,
-        )
-
-        print()
-
-
-def print_toolchains(
-    toolchains: Sequence[ToolchainInfo],
-    extra_tc_includes: Set[Path],
-) -> None:
-    print_section(S("section_toolchains_title"))
-    print(S("section_toolchains_discovered").format(count=len(toolchains)))
-    print()
-
-    if not toolchains:
-        print(S("section_toolchains_none"))
-        print()
-        return
-
-    for idx, tc in enumerate(toolchains, start=1):
-        print(S("section_toolchain_header").format(index=idx))
-        print(S("section_toolchain_stdlib_path"))
-        print(indent(str(tc.stdlib_h), "    "))
-        print(S("section_toolchain_include_dir"))
-        print(indent(str(tc.include_dir), "    "))
-        if tc.compiler_path:
-            print(S("section_toolchain_compiler_path"))
-            print(indent(str(tc.compiler_path), "    "))
-
-        parents = list(tc.include_dir.parents)
-        tc_root = parents[1] if len(parents) > 1 else tc.include_dir
-
-        _print_friend_headers(
-            label=S("friends_label_toolchain"),
-            include_dir=tc.include_dir,
-            friends=CLIB_FRIENDS,
-            search_root=tc_root,
-            extra_includes=extra_tc_includes,
-        )
-
-        print()
-
-    print(S("section_toolchain_best_guess"))
-    print(indent(str(toolchains[0].include_dir), "  "))
-    print()
-
-
-def print_com_ports(
-    ports: Sequence[ComPortInfo],
-    pyserial_available: bool,
-) -> None:
-    print_section(S("section_com_title"))
-
-    if not pyserial_available:
-        print(S("section_com_pyserial_missing"))
-        print()
-        return
-
-    print(S("section_com_detected").format(count=len(ports)))
-    print()
-
-    if not ports:
-        print(S("section_com_none"))
-        print()
-        return
-
-    for idx, port in enumerate(ports, start=1):
-        board_guess = guess_board(port.vid, port.pid)
-
-        print(S("section_com_port_header").format(index=idx, device=port.device))
-        print(S("section_com_description").format(value=port.description))
-        print(S("section_com_hwid").format(value=port.hwid))
-
-        if port.vid is not None and port.pid is not None:
-            print(S("section_com_vid_pid").format(vid=port.vid, pid=port.pid))
-        else:
-            print(S("section_com_vid_pid_missing"))
-
-        if port.manufacturer or port.product:
-            print(S("section_com_usb_strings"))
-            if port.manufacturer:
-                print(S("section_com_manufacturer").format(value=port.manufacturer))
-            if port.product:
-                print(S("section_com_product").format(value=port.product))
-
-        print(S("section_com_board_guess").format(value=board_guess))
-        print()
-
-
-def print_header_groups(
-    header_collections: Mapping[str, Sequence[object]],
-    ports: Sequence[ComPortInfo],
-) -> None:
-    for key in HEADER_GROUP_ORDER:
-        cfg = HEADER_GROUPS[key]
-        items = list(header_collections.get(key, ()))
-
-        section_title = S(cfg["section_title_key"])
-        discovered_label = S(cfg["discovered_label_key"])
-        none_found_msg = S(cfg["none_found_key"])
-        item_label = cfg["item_label"]
-        header_desc = cfg["header_desc"]
-        header_attr = cfg["header_attr"]
-        include_attr = cfg["include_attr"]
-
-        _print_matched_headers(
-            section_title=section_title,
-            discovered_label=discovered_label,
-            none_found_msg=none_found_msg,
-            item_label=item_label,
-            header_desc=header_desc,
-            items=items,
-            ports=ports,
-            header_attr=header_attr,
-            include_attr=include_attr,
-        )
-
-
-def print_suggested_flags(
-    header_collections: Mapping[str, Sequence[object]],
-    suggested_collections: Mapping[str, Sequence[object]],
-    extra_core_includes: Set[Path],
-    extra_tc_includes: Set[Path],
-) -> None:
-    cores = cast(Sequence[CoreInfo], header_collections.get("cores", ()))
-    toolchains = cast(Sequence[ToolchainInfo], header_collections.get("toolchains", ()))
-
-    print_section(S("section_flags_title"))
-
-    # Arduino core include paths
-    print(S("flags_arduino_paths_title"))
-    if cores:
-        for core in cores:
-            print(f'  -I"{core.include_dir}"')
-    else:
-        print(S("flags_none_found"))
-
-    if extra_core_includes:
-        print()
-        print(S("flags_extra_core_paths_title"))
-        for path in sorted(extra_core_includes, key=str):
-            print(f'  -I"{path}"')
-
-    print()
-
-    # Toolchain include paths
-    print(S("flags_toolchain_paths_title"))
-    if toolchains:
-        for toolchain in toolchains:
-            print(f'  -I"{toolchain.include_dir}"')
-            if toolchain.compiler_path:
-                print(S("flags_compiler_label").format(path=toolchain.compiler_path))
-    else:
-        print(S("flags_none_found"))
-
-    if extra_tc_includes:
-        print()
-        print(S("flags_extra_toolchain_paths_title"))
-        for path in sorted(extra_tc_includes, key=str):
-            print(f'  -I"{path}"')
-
-    print()
-
-    def _print_group(label_key: str, paths: Sequence[Path]) -> None:
-        print(S("flags_group_label").format(label=S(label_key)))
-        if paths:
-            for path in paths:
-                print(f'  -I"{path}"')
-        else:
-            print(S("flags_none_found"))
-        print()
-
-    for key, label_key in FLAGS_GROUP_LABEL_KEYS.items():
-        items = list(suggested_collections.get(key, ()))
-        paths: List[Path] = [
-            cast(Path, getattr(item, "include_dir")) for item in items
-        ]
-        _print_group(label_key, paths)
-
-
-# =========================
-# Scan orchestration (typed)
-# =========================
-
 HeaderFinder = Callable[[Path], Sequence[object]]
 
-SCAN_FINDERS: Dict[str, HeaderFinder] = {
-    "cores": lambda base: cast(Sequence[object], find_arduino_headers(base)),
-    "toolchains": lambda base: cast(Sequence[object], find_stdlib_headers(base)),
-    "bsp": lambda base: cast(Sequence[object], find_bsp_api_headers(base)),
-    "fsp_common": lambda base: cast(
-        Sequence[object],
-        find_fsp_common_api_headers(base),
-    ),
-    "bsp_cfg": lambda base: cast(Sequence[object], find_bsp_cfg_headers(base)),
-    "hal_data": lambda base: cast(Sequence[object], find_hal_data_headers(base)),
-    "cmsis": lambda base: cast(Sequence[object], find_cmsis_headers(base)),
-    "r_cgc": lambda base: cast(Sequence[object], find_r_cgc_headers(base)),
-    "r_cgc_cfg": lambda base: cast(Sequence[object], find_r_cgc_cfg_headers(base)),
-    "fsp_module_cfg": lambda base: cast(
-        Sequence[object],
-        find_fsp_module_cfg_headers(base),
-    ),
-}
+
+# =========================
+# Helpers: ASCII logo
+# =========================
+
+class AsciiLogoRenderer:
+    @staticmethod
+    def render_big_text(
+        text: str,
+        on: str = "#",
+        off: str = " ",
+        spacing: int = 1,
+        scale: int = 1,
+    ) -> str:
+        text = text.upper()
+        rows: List[str] = []
+
+        for row in range(7):
+            line_chunks: List[str] = []
+            for char in text:
+                glyph = FONT.get(char, FONT[" "])
+                bits = glyph[row]
+                pixels: List[str] = []
+
+                for col in range(4, -1, -1):
+                    filled = bool(bits & (1 << col))
+                    pixels.append(on if filled else off)
+
+                scaled = "".join(ch * scale for ch in pixels)
+                line_chunks.append(scaled)
+
+            line = (" " * spacing).join(line_chunks)
+
+            for _ in range(scale):
+                rows.append(line)
+
+        return "\n".join(rows)
+
+    @staticmethod
+    def print_ascii_logo(title: str) -> None:
+        art = AsciiLogoRenderer.render_big_text(
+            title,
+            on="#",
+            off=" ",
+            spacing=1,
+            scale=1,
+        )
+        print(art)
+        print("-" * max(len(line) for line in art.splitlines()))
+        print()
 
 
-def run_scans(base_dir: Path) -> Dict[str, Sequence[object]]:
-    collections: Dict[str, Sequence[object]] = {}
-    for key, finder in SCAN_FINDERS.items():
-        collections[key] = finder(base_dir)
-    return collections
+# =========================
+# Helpers: pyserial
+# =========================
+
+class PySerialHelper:
+    @staticmethod
+    def ensure_pyserial() -> Optional[Any]:
+        try:
+            from serial.tools import list_ports  # type: ignore[import]
+            print(S("pyserial_already"))
+            return list_ports
+        except Exception:
+            print(S("pyserial_not_installed"))
+
+        cmd_list = [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--user",
+            "pyserial",
+        ]
+        cmd_str = " ".join(cmd_list)
+        print(S("pyserial_running_cmd").format(cmd=cmd_str))
+
+        try:
+            proc = subprocess.run(
+                cmd_list,
+                text=True,
+                capture_output=True,
+            )
+        except Exception as exc:
+            print(S("pyserial_pip_failed").format(exc=exc))
+            return None
+
+        print(S("pyserial_pip_exit").format(code=proc.returncode))
+
+        if proc.stdout.strip():
+            print(S("pyserial_pip_stdout_header"))
+            print(proc.stdout.strip())
+        if proc.stderr.strip():
+            print(S("pyserial_pip_stderr_header"))
+            print(proc.stderr.strip())
+
+        if proc.returncode != 0:
+            print(S("pyserial_install_failed"))
+            return None
+
+        try:
+            from serial.tools import list_ports  # type: ignore[import]
+            print(S("pyserial_import_after_install_ok"))
+            return list_ports
+        except Exception as exc:
+            print(S("pyserial_import_after_install_failed").format(exc=exc))
+            return None
 
 
-def build_suggested_collections(
-    header_collections: Mapping[str, Sequence[object]],
-    ports: Sequence[ComPortInfo],
-) -> Dict[str, Sequence[object]]:
-    suggested: Dict[str, Sequence[object]] = {}
+# =========================
+# Helpers: paths
+# =========================
 
-    for key, cfg in HEADER_GROUPS.items():
-        items = list(header_collections.get(key, ()))
-        header_attr = cfg["header_attr"]
+class PathHelper:
+    @staticmethod
+    def resolve_base_dir(cli_base_dir: Optional[str]) -> Path:
+        if cli_base_dir:
+            return Path(cli_base_dir).expanduser().resolve()
+
+        home = Path.home()
+        candidates = [
+            home / "Documents" / "ArduinoData",
+            home / "AppData" / "Local" / "Arduino15",
+        ]
+
+        for candidate in candidates:
+            if candidate.is_dir():
+                return candidate
+
+        return Path.cwd()
+
+    @staticmethod
+    def path_contains_any(path: Path, tokens: Sequence[str]) -> bool:
+        lower = str(path).lower()
+        return any(token in lower for token in tokens)
+
+
+# =========================
+# Header scanning (generic + concrete)
+# =========================
+
+class HeaderScans:
+    @staticmethod
+    def _dedupe_by_include_dir(
+        items: Iterable[TInclude],
+    ) -> List[TInclude]:
+        seen: Set[Path] = set()
+        unique: List[TInclude] = []
+
+        for item in sorted(items, key=lambda x: str(x.include_dir)):
+            if item.include_dir in seen:
+                continue
+            seen.add(item.include_dir)
+            unique.append(item)
+
+        return unique
+
+    @staticmethod
+    def _find_headers_generic(
+        base_dir: Path,
+        patterns: Sequence[str],
+        factory: Callable[[Path], TInclude],
+        exclude: Optional[Callable[[Path], bool]] = None,
+    ) -> List[TInclude]:
+        results: List[TInclude] = []
+
+        for pattern in patterns:
+            for header in base_dir.rglob(pattern):
+                if not header.is_file():
+                    continue
+                if exclude is not None and exclude(header):
+                    continue
+                results.append(factory(header))
+
+        return HeaderScans._dedupe_by_include_dir(results)
+
+    @staticmethod
+    def _find_compiler(include_dir: Path) -> Optional[Path]:
+        compiler_names = [
+            "arm-none-eabi-gcc",
+            "arm-none-eabi-g++",
+            "gcc",
+            "g++",
+            "cc",
+            "c++",
+        ]
+
+        parents = [include_dir.parent] + list(include_dir.parents[:3])
+
+        for parent in parents:
+            bin_dir = parent / "bin"
+            if not bin_dir.is_dir():
+                continue
+
+            for name in compiler_names:
+                compiler = (
+                    bin_dir / f"{name}.exe"
+                    if platform.system() == "Windows"
+                    else bin_dir / name
+                )
+                if compiler.is_file():
+                    return compiler
+
+        return None
+
+    @staticmethod
+    def find_arduino_headers(base_dir: Path) -> List[CoreInfo]:
+        results: List[CoreInfo] = []
+
+        for header in base_dir.rglob("Arduino.h"):
+            parts = [part.lower() for part in header.parts]
+            if "cores" not in parts:
+                continue
+            results.append(CoreInfo(arduino_h=header, include_dir=header.parent))
+
+        return HeaderScans._dedupe_by_include_dir(results)
+
+    @staticmethod
+    def find_stdlib_headers(base_dir: Path) -> List[ToolchainInfo]:
+        results: List[ToolchainInfo] = []
+
+        for header in base_dir.rglob("stdlib.h"):
+            if not header.is_file():
+                continue
+            if header.parent.name != "include":
+                continue
+            if not PathHelper.path_contains_any(header, TOOLCHAIN_TOKENS):
+                continue
+            compiler = HeaderScans._find_compiler(header.parent)
+            results.append(
+                ToolchainInfo(
+                    stdlib_h=header,
+                    include_dir=header.parent,
+                    compiler_path=compiler,
+                )
+            )
+
+        return HeaderScans._dedupe_by_include_dir(results)
+
+    @staticmethod
+    def find_bsp_api_headers(base_dir: Path) -> List[BSPInfo]:
+        return HeaderScans._find_headers_generic(
+            base_dir=base_dir,
+            patterns=["bsp_api.h"],
+            factory=lambda header: BSPInfo(
+                bsp_api_h=header,
+                include_dir=header.parent,
+            ),
+        )
+
+    @staticmethod
+    def find_fsp_common_api_headers(base_dir: Path) -> List[FSPCommonInfo]:
+        return HeaderScans._find_headers_generic(
+            base_dir=base_dir,
+            patterns=["fsp_common_api.h"],
+            factory=lambda header: FSPCommonInfo(
+                fsp_common_api_h=header,
+                include_dir=header.parent,
+            ),
+        )
+
+    @staticmethod
+    def find_bsp_cfg_headers(base_dir: Path) -> List[BSPCfgInfo]:
+        return HeaderScans._find_headers_generic(
+            base_dir=base_dir,
+            patterns=["bsp_cfg.h"],
+            factory=lambda header: BSPCfgInfo(
+                bsp_cfg_h=header,
+                include_dir=header.parent,
+            ),
+        )
+
+    @staticmethod
+    def find_hal_data_headers(base_dir: Path) -> List[HALDataInfo]:
+        return HeaderScans._find_headers_generic(
+            base_dir=base_dir,
+            patterns=["hal_data.h"],
+            factory=lambda header: HALDataInfo(
+                hal_data_h=header,
+                include_dir=header.parent,
+            ),
+        )
+
+    @staticmethod
+    def find_cmsis_headers(base_dir: Path) -> List[CMSISInfo]:
+        return HeaderScans._find_headers_generic(
+            base_dir=base_dir,
+            patterns=[
+                "cmsis_device.h",
+                "core_cm0.h",
+                "core_cm3.h",
+                "core_cm4.h",
+                "core_cm7.h",
+            ],
+            factory=lambda header: CMSISInfo(
+                cmsis_h=header,
+                include_dir=header.parent,
+            ),
+        )
+
+    @staticmethod
+    def find_r_cgc_headers(base_dir: Path) -> List[RCGCInfo]:
+        return HeaderScans._find_headers_generic(
+            base_dir=base_dir,
+            patterns=["r_cgc.h"],
+            factory=lambda header: RCGCInfo(
+                r_cgc_h=header,
+                include_dir=header.parent,
+            ),
+        )
+
+    @staticmethod
+    def find_r_cgc_cfg_headers(base_dir: Path) -> List[RCGCCfgInfo]:
+        return HeaderScans._find_headers_generic(
+            base_dir=base_dir,
+            patterns=["r_cgc_cfg.h"],
+            factory=lambda header: RCGCCfgInfo(
+                r_cgc_cfg_h=header,
+                include_dir=header.parent,
+            ),
+        )
+
+    @staticmethod
+    def find_fsp_module_cfg_headers(base_dir: Path) -> List[FSPModuleCfgInfo]:
+        return HeaderScans._find_headers_generic(
+            base_dir=base_dir,
+            patterns=["r_*_cfg.h"],
+            factory=lambda header: FSPModuleCfgInfo(
+                cfg_h=header,
+                include_dir=header.parent,
+            ),
+            exclude=lambda header: header.name == "r_cgc_cfg.h",
+        )
+
+    @staticmethod
+    def find_pins_arduino_headers(base_dir: Path) -> List[PinsInfo]:
+        return HeaderScans._find_headers_generic(
+            base_dir=base_dir,
+            patterns=["pins_arduino.h"],
+            factory=lambda header: PinsInfo(
+                pins_arduino_h=header,
+                include_dir=header.parent,
+            ),
+        )
+
+
+# =========================
+# Friends / includes
+# =========================
+
+class FriendPrinter:
+    @staticmethod
+    def friends_status(
+        include_dir: Path,
+        friends: Sequence[str],
+        search_root: Optional[Path],
+    ) -> List[Tuple[str, List[Path]]]:
+        statuses: List[Tuple[str, List[Path]]] = []
+
+        for name in sorted(friends):
+            primary = include_dir / name
+            found: List[Path] = []
+
+            if primary.is_file():
+                found.append(primary)
+
+            if not found and search_root is not None and search_root.is_dir():
+                for candidate in search_root.rglob(name):
+                    if not candidate.is_file():
+                        continue
+                    if candidate == primary:
+                        continue
+                    found.append(candidate)
+                    break
+
+            statuses.append((name, found))
+
+        return statuses
+
+    @staticmethod
+    def print_friend_headers(
+        label: str,
+        include_dir: Path,
+        friends: Sequence[str],
+        search_root: Path,
+        extra_includes: Set[Path],
+    ) -> None:
+        print(S("friends_label_generic").format(label=label))
+        status_list = FriendPrinter.friends_status(include_dir, friends, search_root)
+        for name, paths in status_list:
+            primary = include_dir / name
+            if not paths:
+                print(S("friends_missing").format(name=name, root=search_root))
+                continue
+            for path in paths:
+                tag = S("friends_ok") if path == primary else S("friends_alt")
+                print(f"    {tag}  {name} -> {path}")
+                if path.parent != include_dir:
+                    extra_includes.add(path.parent)
+
+
+# =========================
+# Board ID helpers
+# =========================
+
+class BoardIdentifier:
+    @staticmethod
+    def guess_board(vid: Optional[int], pid: Optional[int]) -> str:
+        if vid is None or pid is None:
+            return S("board_unknown_no_vid_pid")
+
+        key = (vid, pid)
+        string_key = VID_PID_TO_STRING_KEY.get(key)
+
+        if string_key is not None:
+            return S(string_key)
+
+        if vid in ARDUINO_VIDS:
+            return S("board_arduino_exact_unknown")
+        if vid == 0x1A86:
+            return S("board_ch340_based")
+        if vid == 0x10C4:
+            return S("board_cp210x_based")
+
+        return S("board_unknown_unmapped")
+
+    @staticmethod
+    def short_board_name(vid: Optional[int], pid: Optional[int]) -> str:
+        if vid is None or pid is None:
+            return "SCAN"
+
+        key = (vid, pid)
+
+        if key in SHORT_NAME_MAP:
+            return SHORT_NAME_MAP[key]
+
+        if vid in VENDOR_SHORT_FALLBACK:
+            return VENDOR_SHORT_FALLBACK[vid]
+
+        if vid in ARDUINO_VIDS:
+            return "ARDUINO"
+
+        return "SCAN"
+
+
+# =========================
+# COM ports
+# =========================
+
+class ComPortScanner:
+    @staticmethod
+    def scan_com_ports(list_ports_module: Optional[Any]) -> List[ComPortInfo]:
+        if list_ports_module is None:
+            return []
+
+        ports = list_ports_module.comports()  # type: ignore[attr-defined]
+        results: List[ComPortInfo] = []
+
+        for port in ports:
+            vid = getattr(port, "vid", None)
+            pid = getattr(port, "pid", None)
+            manufacturer = getattr(port, "manufacturer", None)
+            product = getattr(port, "product", None)
+
+            results.append(
+                ComPortInfo(
+                    device=str(port.device),
+                    description=str(port.description),
+                    hwid=str(port.hwid),
+                    vid=vid,
+                    pid=pid,
+                    manufacturer=manufacturer,
+                    product=product,
+                )
+            )
+
+        return results
+
+    @staticmethod
+    def derive_banner_title(ports: Sequence[ComPortInfo]) -> str:
+        if not ports:
+            return S("banner_default")
+
+        arduino_ports: List[ComPortInfo] = []
+        other_ports: List[ComPortInfo] = []
+
+        for port in ports:
+            if port.vid in ARDUINO_VIDS:
+                arduino_ports.append(port)
+            else:
+                other_ports.append(port)
+
+        if arduino_ports:
+            target = arduino_ports[0]
+        else:
+            target = other_ports[0] if other_ports else None
+
+        if target is None:
+            return S("banner_default")
+
+        short = BoardIdentifier.short_board_name(target.vid, target.pid)
+        return S("banner_arduino_prefix").format(short=short)
+
+
+# =========================
+# Header matching & suggestions
+# =========================
+
+class HeaderMatcher:
+    @staticmethod
+    def _select_detected_port(
+        ports: Sequence[ComPortInfo],
+    ) -> Optional[ComPortInfo]:
+        if not ports:
+            return None
+
+        for port in ports:
+            if port.vid in ARDUINO_VIDS:
+                return port
+
+        return ports[0]
+
+    @staticmethod
+    def _variant_names_for_ports(
+        ports: Sequence[ComPortInfo],
+    ) -> List[str]:
+        detected = HeaderMatcher._select_detected_port(ports)
+        if detected is None:
+            return []
+
+        board_short = BoardIdentifier.short_board_name(detected.vid, detected.pid)
+        variant_names = BOARD_VARIANTS.get(board_short)
+
+        if not variant_names:
+            return []
+
+        return list(variant_names)
+
+    @staticmethod
+    def match_header_by_variants(
+        items: Sequence[object],
+        ports: Sequence[ComPortInfo],
+        path_getter: Callable[[object], Path],
+    ) -> Tuple[Optional[object], List[object]]:
+        if not items:
+            return None, list(items)
+
+        variant_names = HeaderMatcher._variant_names_for_ports(ports)
+        if not variant_names:
+            return None, list(items)
+
+        for variant_name in variant_names:
+            variant_lower = variant_name.lower()
+            for item in items:
+                if variant_lower in str(path_getter(item)).lower():
+                    remaining = [i for i in items if i is not item]
+                    return item, remaining
+
+        return None, list(items)
+
+    @staticmethod
+    def print_matched_headers(
+        section_title: str,
+        discovered_label: str,
+        none_found_msg: str,
+        item_label: str,
+        header_desc: str,
+        items: Sequence[object],
+        ports: Sequence[ComPortInfo],
+        header_attr: str,
+        include_attr: str,
+    ) -> None:
+        ReportPrinter.print_section(section_title)
+        print(
+            S("section_header_discovered").format(
+                label=discovered_label,
+                count=len(items),
+            )
+        )
+        print()
+
+        if not items:
+            print(S("section_header_none").format(message=none_found_msg))
+            print()
+            return
 
         def _header_path(item: object) -> Path:
             return cast(Path, getattr(item, header_attr))
 
-        matched, _ = _match_header_by_variants(items, ports, _header_path)
+        def _include_dir(item: object) -> Path:
+            return cast(Path, getattr(item, include_attr))
+
+        matched, remaining = HeaderMatcher.match_header_by_variants(
+            items,
+            ports,
+            _header_path,
+        )
+
+        def _print_item(idx: int, item: object, matched_flag: bool) -> None:
+            suffix = S("section_header_match_suffix") if matched_flag else ""
+            print(
+                S("section_header_item_header").format(
+                    item_label=item_label,
+                    index=idx,
+                    suffix=suffix,
+                )
+            )
+            print(S("section_header_full_path").format(desc=header_desc))
+            print(ReportPrinter.indent(str(_header_path(item)), "    "))
+            print(S("section_header_include_dir"))
+            print(ReportPrinter.indent(str(_include_dir(item)), "    "))
+            print()
 
         if matched is not None:
-            suggested[key] = [matched]
+            _print_item(1, matched, True)
+            for idx, item in enumerate(remaining, start=2):
+                _print_item(idx, item, False)
         else:
-            suggested[key] = items
+            for idx, item in enumerate(items, start=1):
+                _print_item(idx, item, False)
 
-    return suggested
+
+# =========================
+# Printing helpers / report
+# =========================
+
+class ReportPrinter:
+    @staticmethod
+    def print_rule(char: str = "─", width: int = 72) -> None:
+        print(char * width)
+
+    @staticmethod
+    def print_section(title: str) -> None:
+        ReportPrinter.print_rule("=")
+        print(title)
+        ReportPrinter.print_rule("=")
+
+    @staticmethod
+    def indent(text: str, prefix: str = "  ") -> str:
+        return "\n".join(prefix + line for line in text.splitlines())
+
+    @staticmethod
+    def print_system_neofetch(base_dir: Path) -> None:
+        ReportPrinter.print_section(S("section_neofetch_title"))
+        print(S("neofetch_user_label").format(value=Path.home().name))
+        print(
+            S("neofetch_os_label").format(
+                value=f"{platform.system()} {platform.release()}",
+            )
+        )
+        print(S("neofetch_python_label").format(value=platform.python_version()))
+        print(S("neofetch_arch_label").format(value=platform.machine()))
+        print(S("neofetch_arduino_dir_label").format(value=base_dir))
+        print(S("neofetch_python_exe_label").format(value=sys.executable))
+        print()
+
+    @staticmethod
+    def print_cores(
+        cores: Sequence[CoreInfo],
+        extra_core_includes: Set[Path],
+    ) -> None:
+        ReportPrinter.print_section(S("section_cores_title"))
+        print(S("section_cores_discovered").format(count=len(cores)))
+        print()
+
+        if not cores:
+            print(S("section_cores_none"))
+            print()
+            return
+
+        for idx, core in enumerate(cores, start=1):
+            print(S("section_core_header").format(index=idx))
+            print(S("section_core_arduino_path"))
+            print(ReportPrinter.indent(str(core.arduino_h), "    "))
+            print(S("section_core_include_dir"))
+            print(ReportPrinter.indent(str(core.include_dir), "    "))
+
+            parents = list(core.include_dir.parents)
+            hw_root = parents[2] if len(parents) > 2 else core.include_dir
+
+            FriendPrinter.print_friend_headers(
+                label=S("friends_label_core"),
+                include_dir=core.include_dir,
+                friends=CORE_FRIENDS,
+                search_root=hw_root,
+                extra_includes=extra_core_includes,
+            )
+
+            print()
+
+    @staticmethod
+    def print_toolchains(
+        toolchains: Sequence[ToolchainInfo],
+        extra_tc_includes: Set[Path],
+    ) -> None:
+        ReportPrinter.print_section(S("section_toolchains_title"))
+        print(S("section_toolchains_discovered").format(count=len(toolchains)))
+        print()
+
+        if not toolchains:
+            print(S("section_toolchains_none"))
+            print()
+            return
+
+        for idx, tc in enumerate(toolchains, start=1):
+            print(S("section_toolchain_header").format(index=idx))
+            print(S("section_toolchain_stdlib_path"))
+            print(ReportPrinter.indent(str(tc.stdlib_h), "    "))
+            print(S("section_toolchain_include_dir"))
+            print(ReportPrinter.indent(str(tc.include_dir), "    "))
+            if tc.compiler_path:
+                print(S("section_toolchain_compiler_path"))
+                print(ReportPrinter.indent(str(tc.compiler_path), "    "))
+
+            parents = list(tc.include_dir.parents)
+            tc_root = parents[1] if len(parents) > 1 else tc.include_dir
+
+            FriendPrinter.print_friend_headers(
+                label=S("friends_label_toolchain"),
+                include_dir=tc.include_dir,
+                friends=CLIB_FRIENDS,
+                search_root=tc_root,
+                extra_includes=extra_tc_includes,
+            )
+
+            print()
+
+        print(S("section_toolchain_best_guess"))
+        print(ReportPrinter.indent(str(toolchains[0].include_dir), "  "))
+        print()
+
+    @staticmethod
+    def print_com_ports(
+        ports: Sequence[ComPortInfo],
+        pyserial_available: bool,
+    ) -> None:
+        ReportPrinter.print_section(S("section_com_title"))
+
+        if not pyserial_available:
+            print(S("section_com_pyserial_missing"))
+            print()
+            return
+
+        print(S("section_com_detected").format(count=len(ports)))
+        print()
+
+        if not ports:
+            print(S("section_com_none"))
+            print()
+            return
+
+        for idx, port in enumerate(ports, start=1):
+            board_guess = BoardIdentifier.guess_board(port.vid, port.pid)
+
+            print(S("section_com_port_header").format(index=idx, device=port.device))
+            print(S("section_com_description").format(value=port.description))
+            print(S("section_com_hwid").format(value=port.hwid))
+
+            if port.vid is not None and port.pid is not None:
+                print(S("section_com_vid_pid").format(vid=port.vid, pid=port.pid))
+            else:
+                print(S("section_com_vid_pid_missing"))
+
+            if port.manufacturer or port.product:
+                print(S("section_com_usb_strings"))
+                if port.manufacturer:
+                    print(S("section_com_manufacturer").format(value=port.manufacturer))
+                if port.product:
+                    print(S("section_com_product").format(value=port.product))
+
+            print(S("section_com_board_guess").format(value=board_guess))
+            print()
+
+    @staticmethod
+    def print_header_groups(
+        header_collections: Mapping[str, Sequence[object]],
+        ports: Sequence[ComPortInfo],
+    ) -> None:
+        for key in HEADER_GROUP_ORDER:
+            cfg = HEADER_GROUPS[key]
+            items = list(header_collections.get(key, ()))
+
+            section_title = S(cfg["section_title_key"])
+            discovered_label = S(cfg["discovered_label_key"])
+            none_found_msg = S(cfg["none_found_key"])
+            item_label = cfg["item_label"]
+            header_desc = cfg["header_desc"]
+            header_attr = cfg["header_attr"]
+            include_attr = cfg["include_attr"]
+
+            HeaderMatcher.print_matched_headers(
+                section_title=section_title,
+                discovered_label=discovered_label,
+                none_found_msg=none_found_msg,
+                item_label=item_label,
+                header_desc=header_desc,
+                items=items,
+                ports=ports,
+                header_attr=header_attr,
+                include_attr=include_attr,
+            )
+
+    @staticmethod
+    def print_suggested_flags(
+        header_collections: Mapping[str, Sequence[object]],
+        suggested_collections: Mapping[str, Sequence[object]],
+        extra_core_includes: Set[Path],
+        extra_tc_includes: Set[Path],
+    ) -> None:
+        cores = cast(Sequence[CoreInfo], header_collections.get("cores", ()))
+        toolchains = cast(
+            Sequence[ToolchainInfo],
+            header_collections.get("toolchains", ()),
+        )
+
+        ReportPrinter.print_section(S("section_flags_title"))
+
+        print(S("flags_arduino_paths_title"))
+        if cores:
+            for core in cores:
+                print(f'  -I"{core.include_dir}"')
+        else:
+            print(S("flags_none_found"))
+
+        if extra_core_includes:
+            print()
+            print(S("flags_extra_core_paths_title"))
+            for path in sorted(extra_core_includes, key=str):
+                print(f'  -I"{path}"')
+
+        print()
+
+        print(S("flags_toolchain_paths_title"))
+        if toolchains:
+            for toolchain in toolchains:
+                print(f'  -I"{toolchain.include_dir}"')
+                if toolchain.compiler_path:
+                    print(
+                        S("flags_compiler_label").format(
+                            path=toolchain.compiler_path,
+                        )
+                    )
+        else:
+            print(S("flags_none_found"))
+
+        if extra_tc_includes:
+            print()
+            print(S("flags_extra_toolchain_paths_title"))
+            for path in sorted(extra_tc_includes, key=str):
+                print(f'  -I"{path}"')
+
+        print()
+
+        def _print_group(label_key: str, paths: Sequence[Path]) -> None:
+            print(S("flags_group_label").format(label=S(label_key)))
+            if paths:
+                for path in paths:
+                    print(f'  -I"{path}"')
+            else:
+                print(S("flags_none_found"))
+            print()
+
+        for key, label_key in FLAGS_GROUP_LABEL_KEYS.items():
+            items = list(suggested_collections.get(key, ()))
+            paths: List[Path] = [
+                cast(Path, getattr(item, "include_dir")) for item in items
+            ]
+            _print_group(label_key, paths)
+
+
+# =========================
+# Scan orchestration
+# =========================
+
+class ScanRunner:
+    @staticmethod
+    def _resolve_callable(path: str) -> Optional[HeaderFinder]:
+        obj: Any = sys.modules[__name__]
+        for part in path.split("."):
+            obj = getattr(obj, part, None)
+            if obj is None:
+                return None
+        return cast(HeaderFinder, obj)
+
+    @staticmethod
+    def run_scans(base_dir: Path) -> Dict[str, Sequence[object]]:
+        collections: Dict[str, Sequence[object]] = {}
+
+        for key, func_name in SCAN_FINDER_FUNCTIONS.items():
+            finder = ScanRunner._resolve_callable(func_name)
+            if finder is None:
+                continue
+            collections[key] = finder(base_dir)
+
+        return collections
+
+    @staticmethod
+    def build_suggested_collections(
+        header_collections: Mapping[str, Sequence[object]],
+        ports: Sequence[ComPortInfo],
+    ) -> Dict[str, Sequence[object]]:
+        suggested: Dict[str, Sequence[object]] = {}
+
+        for key, cfg in HEADER_GROUPS.items():
+            items = list(header_collections.get(key, ()))
+            header_attr = cfg["header_attr"]
+
+            def _header_path(item: object) -> Path:
+                return cast(Path, getattr(item, header_attr))
+
+            matched, _ = HeaderMatcher.match_header_by_variants(
+                items,
+                ports,
+                _header_path,
+            )
+
+            if matched is not None:
+                suggested[key] = [matched]
+            else:
+                suggested[key] = items
+
+        return suggested
 
 
 # =========================
@@ -1398,44 +1485,48 @@ class ArduinoScanner:
         self.base_dir = base_dir
         self.list_ports_module = list_ports_module
         self.pyserial_available = list_ports_module is not None
-        self.ports: List[ComPortInfo] = scan_com_ports(list_ports_module)
+        self.ports: List[ComPortInfo] = ComPortScanner.scan_com_ports(
+            list_ports_module,
+        )
 
-        self.header_collections: Dict[str, Sequence[object]] = run_scans(base_dir)
+        self.header_collections: Dict[str, Sequence[object]] = ScanRunner.run_scans(
+            base_dir,
+        )
 
         self.extra_core_includes: Set[Path] = set()
         self.extra_tc_includes: Set[Path] = set()
 
         self.suggested_collections: Dict[str, Sequence[object]] = (
-            build_suggested_collections(
+            ScanRunner.build_suggested_collections(
                 self.header_collections,
                 self.ports,
             )
         )
 
     def step_banner(self) -> None:
-        banner_title = derive_banner_title(self.ports)
-        print_ascii_logo(banner_title)
-        print_system_neofetch(self.base_dir)
+        banner_title = ComPortScanner.derive_banner_title(self.ports)
+        AsciiLogoRenderer.print_ascii_logo(banner_title)
+        ReportPrinter.print_system_neofetch(self.base_dir)
 
     def step_cores(self) -> None:
         cores = cast(Sequence[CoreInfo], self.header_collections.get("cores", ()))
-        print_cores(cores, self.extra_core_includes)
+        ReportPrinter.print_cores(cores, self.extra_core_includes)
 
     def step_toolchains(self) -> None:
         toolchains = cast(
             Sequence[ToolchainInfo],
             self.header_collections.get("toolchains", ()),
         )
-        print_toolchains(toolchains, self.extra_tc_includes)
+        ReportPrinter.print_toolchains(toolchains, self.extra_tc_includes)
 
     def step_header_groups(self) -> None:
-        print_header_groups(self.header_collections, self.ports)
+        ReportPrinter.print_header_groups(self.header_collections, self.ports)
 
     def step_com_ports(self) -> None:
-        print_com_ports(self.ports, self.pyserial_available)
+        ReportPrinter.print_com_ports(self.ports, self.pyserial_available)
 
     def step_flags(self) -> None:
-        print_suggested_flags(
+        ReportPrinter.print_suggested_flags(
             self.header_collections,
             self.suggested_collections,
             self.extra_core_includes,
@@ -1477,13 +1568,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         argv = sys.argv[1:]
 
     args = parse_args(argv)
-    base_dir = resolve_base_dir(args.base_dir)
+    base_dir = PathHelper.resolve_base_dir(args.base_dir)
 
     if not base_dir.is_dir():
         print(S("err_base_dir_missing").format(path=base_dir), file=sys.stderr)
         return 1
 
-    list_ports_module = ensure_pyserial()
+    list_ports_module = PySerialHelper.ensure_pyserial()
     scanner = ArduinoScanner(base_dir, list_ports_module)
     scanner.run_pipeline()
     return 0
