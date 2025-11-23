@@ -120,6 +120,12 @@ class ToolchainInfo:
 
 
 @dataclass(frozen=True)
+class BSPInfo:
+    bsp_api_h: Path
+    include_dir: Path
+
+
+@dataclass(frozen=True)
 class ComPortInfo:
     device: str
     description: str
@@ -275,6 +281,36 @@ def _dedupe_toolchains(
             continue
         seen.add(tc.include_dir)
         unique.append(tc)
+
+    return unique
+
+
+# =========================
+# BSP API discovery
+# =========================
+
+def find_bsp_api_headers(base_dir: Path) -> List[BSPInfo]:
+    results: List[BSPInfo] = []
+
+    for header in base_dir.rglob("bsp_api.h"):
+        if not header.is_file():
+            continue
+        if header.parent.name != "include":
+            continue
+        results.append(BSPInfo(bsp_api_h=header, include_dir=header.parent))
+
+    return _dedupe_bsp(results)
+
+
+def _dedupe_bsp(bsp_list: Iterable[BSPInfo]) -> List[BSPInfo]:
+    seen: Set[Path] = set()
+    unique: List[BSPInfo] = []
+
+    for bsp in sorted(bsp_list, key=lambda b: str(b.include_dir)):
+        if bsp.include_dir in seen:
+            continue
+        seen.add(bsp.include_dir)
+        unique.append(bsp)
 
     return unique
 
@@ -582,6 +618,23 @@ def print_toolchains(
     print()
 
 
+def print_bsp(bsp_list: Sequence[BSPInfo]) -> None:
+    print_section("BSP API (bsp_api.h)")
+    print(f"Discovered BSP headers: {len(bsp_list)}\n")
+
+    if not bsp_list:
+        print("No BSP API headers (bsp_api.h) found.\n")
+        return
+
+    for idx, bsp in enumerate(bsp_list, start=1):
+        print(f"[BSP #{idx}]")
+        print("  bsp_api.h full path:")
+        print(indent(str(bsp.bsp_api_h), "    "))
+        print("  Include directory (-I):")
+        print(indent(str(bsp.include_dir), "    "))
+        print()
+
+
 def print_com_ports(ports: Sequence[ComPortInfo]) -> None:
     print_section("Serial / COM ports")
 
@@ -674,12 +727,14 @@ def main(argv: Sequence[str]) -> None:
 
     cores = find_arduino_headers(base_dir)
     toolchains = find_stdlib_headers(base_dir)
+    bsp_headers = find_bsp_api_headers(base_dir)
 
     extra_core_includes: Set[Path] = set()
     extra_tc_includes: Set[Path] = set()
 
     print_cores(cores, extra_core_includes)
     print_toolchains(toolchains, extra_tc_includes)
+    print_bsp(bsp_headers)
     print_com_ports(ports)
     print_suggested_flags(cores, toolchains, extra_core_includes, extra_tc_includes)
 
