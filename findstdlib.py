@@ -157,6 +157,18 @@ class RCGCInfo:
 
 
 @dataclass(frozen=True)
+class RCGCCfgInfo:
+    r_cgc_cfg_h: Path
+    include_dir: Path
+
+
+@dataclass(frozen=True)
+class FSPModuleCfgInfo:
+    cfg_h: Path
+    include_dir: Path
+
+
+@dataclass(frozen=True)
 class ComPortInfo:
     device: str
     description: str
@@ -484,6 +496,56 @@ def _dedupe_r_cgc(r_cgc_list: Iterable[RCGCInfo]) -> List[RCGCInfo]:
     return unique
 
 
+def find_r_cgc_cfg_headers(base_dir: Path) -> List[RCGCCfgInfo]:
+    results: List[RCGCCfgInfo] = []
+
+    for header in base_dir.rglob("r_cgc_cfg.h"):
+        if not header.is_file():
+            continue
+        results.append(RCGCCfgInfo(r_cgc_cfg_h=header, include_dir=header.parent))
+
+    return _dedupe_r_cgc_cfg(results)
+
+
+def _dedupe_r_cgc_cfg(r_cgc_cfg_list: Iterable[RCGCCfgInfo]) -> List[RCGCCfgInfo]:
+    seen: Set[Path] = set()
+    unique: List[RCGCCfgInfo] = []
+
+    for r_cgc_cfg in sorted(r_cgc_cfg_list, key=lambda r: str(r.include_dir)):
+        if r_cgc_cfg.include_dir in seen:
+            continue
+        seen.add(r_cgc_cfg.include_dir)
+        unique.append(r_cgc_cfg)
+
+    return unique
+
+
+def find_fsp_module_cfg_headers(base_dir: Path) -> List[FSPModuleCfgInfo]:
+    results: List[FSPModuleCfgInfo] = []
+
+    for header in base_dir.rglob("r_*_cfg.h"):
+        if not header.is_file():
+            continue
+        if header.name == "r_cgc_cfg.h":
+            continue
+        results.append(FSPModuleCfgInfo(cfg_h=header, include_dir=header.parent))
+
+    return _dedupe_fsp_module_cfg(results)
+
+
+def _dedupe_fsp_module_cfg(fsp_module_cfg_list: Iterable[FSPModuleCfgInfo]) -> List[FSPModuleCfgInfo]:
+    seen: Set[Path] = set()
+    unique: List[FSPModuleCfgInfo] = []
+
+    for fsp_cfg in sorted(fsp_module_cfg_list, key=lambda f: str(f.include_dir)):
+        if fsp_cfg.include_dir in seen:
+            continue
+        seen.add(fsp_cfg.include_dir)
+        unique.append(fsp_cfg)
+
+    return unique
+
+
 def find_matching_bsp(
     bsp_list: Sequence[BSPInfo],
     ports: Sequence[ComPortInfo],
@@ -710,6 +772,82 @@ def find_matching_r_cgc(
                 return r_cgc, remaining
 
     return None, list(r_cgc_list)
+
+
+def find_matching_r_cgc_cfg(
+    r_cgc_cfg_list: Sequence[RCGCCfgInfo],
+    ports: Sequence[ComPortInfo],
+) -> Tuple[Optional[RCGCCfgInfo], List[RCGCCfgInfo]]:
+    if not ports or not r_cgc_cfg_list:
+        return None, list(r_cgc_cfg_list)
+
+    detected_port = None
+    for p in ports:
+        if p.vid in (0x2341, 0x2A03):
+            detected_port = p
+            break
+    
+    if detected_port is None:
+        detected_port = ports[0] if ports else None
+
+    if detected_port is None:
+        return None, list(r_cgc_cfg_list)
+
+    board_short = short_board_name(detected_port.vid, detected_port.pid)
+    variant_names = _BOARD_TO_VARIANT.get(board_short)
+
+    if variant_names is None:
+        return None, list(r_cgc_cfg_list)
+
+    if not isinstance(variant_names, list):
+        variant_names = [variant_names]
+
+    for variant_name in variant_names:
+        for r_cgc_cfg in r_cgc_cfg_list:
+            r_cgc_cfg_path_lower = str(r_cgc_cfg.r_cgc_cfg_h).lower()
+            if variant_name.lower() in r_cgc_cfg_path_lower:
+                remaining = [r for r in r_cgc_cfg_list if r != r_cgc_cfg]
+                return r_cgc_cfg, remaining
+
+    return None, list(r_cgc_cfg_list)
+
+
+def find_matching_fsp_module_cfg(
+    fsp_module_cfg_list: Sequence[FSPModuleCfgInfo],
+    ports: Sequence[ComPortInfo],
+) -> Tuple[Optional[FSPModuleCfgInfo], List[FSPModuleCfgInfo]]:
+    if not ports or not fsp_module_cfg_list:
+        return None, list(fsp_module_cfg_list)
+
+    detected_port = None
+    for p in ports:
+        if p.vid in (0x2341, 0x2A03):
+            detected_port = p
+            break
+    
+    if detected_port is None:
+        detected_port = ports[0] if ports else None
+
+    if detected_port is None:
+        return None, list(fsp_module_cfg_list)
+
+    board_short = short_board_name(detected_port.vid, detected_port.pid)
+    variant_names = _BOARD_TO_VARIANT.get(board_short)
+
+    if variant_names is None:
+        return None, list(fsp_module_cfg_list)
+
+    if not isinstance(variant_names, list):
+        variant_names = [variant_names]
+
+    for variant_name in variant_names:
+        for fsp_cfg in fsp_module_cfg_list:
+            fsp_cfg_path_lower = str(fsp_cfg.cfg_h).lower()
+            if variant_name.lower() in fsp_cfg_path_lower:
+                remaining = [f for f in fsp_module_cfg_list if f != fsp_cfg]
+                return fsp_cfg, remaining
+
+    return None, list(fsp_module_cfg_list)
 
 
 # =========================
@@ -1238,6 +1376,76 @@ def print_r_cgc(r_cgc_list: Sequence[RCGCInfo], ports: Sequence[ComPortInfo]) ->
             print()
 
 
+def print_r_cgc_cfg(r_cgc_cfg_list: Sequence[RCGCCfgInfo], ports: Sequence[ComPortInfo]) -> None:
+    print_section("R_CGC Configuration (r_cgc_cfg.h)")
+    print(f"Discovered R_CGC config headers: {len(r_cgc_cfg_list)}\n")
+
+    if not r_cgc_cfg_list:
+        print("No R_CGC config headers (r_cgc_cfg.h) found.\n")
+        return
+
+    matched_r_cgc_cfg, remaining = find_matching_r_cgc_cfg(r_cgc_cfg_list, ports)
+
+    if matched_r_cgc_cfg is not None:
+        print("[R_CGC Config #1] [MATCHED TO DETECTED BOARD]")
+        print("  r_cgc_cfg.h full path:")
+        print(indent(str(matched_r_cgc_cfg.r_cgc_cfg_h), "    "))
+        print("  Include directory (-I):")
+        print(indent(str(matched_r_cgc_cfg.include_dir), "    "))
+        print()
+
+        for idx, r_cgc_cfg in enumerate(remaining, start=2):
+            print(f"[R_CGC Config #{idx}]")
+            print("  r_cgc_cfg.h full path:")
+            print(indent(str(r_cgc_cfg.r_cgc_cfg_h), "    "))
+            print("  Include directory (-I):")
+            print(indent(str(r_cgc_cfg.include_dir), "    "))
+            print()
+    else:
+        for idx, r_cgc_cfg in enumerate(r_cgc_cfg_list, start=1):
+            print(f"[R_CGC Config #{idx}]")
+            print("  r_cgc_cfg.h full path:")
+            print(indent(str(r_cgc_cfg.r_cgc_cfg_h), "    "))
+            print("  Include directory (-I):")
+            print(indent(str(r_cgc_cfg.include_dir), "    "))
+            print()
+
+
+def print_fsp_module_cfg(fsp_module_cfg_list: Sequence[FSPModuleCfgInfo], ports: Sequence[ComPortInfo]) -> None:
+    print_section("FSP Module Configuration (r_*_cfg.h)")
+    print(f"Discovered FSP module config headers: {len(fsp_module_cfg_list)}\n")
+
+    if not fsp_module_cfg_list:
+        print("No FSP module config headers (r_*_cfg.h) found.\n")
+        return
+
+    matched_fsp_cfg, remaining = find_matching_fsp_module_cfg(fsp_module_cfg_list, ports)
+
+    if matched_fsp_cfg is not None:
+        print("[FSP Module Config #1] [MATCHED TO DETECTED BOARD]")
+        print("  Config header full path:")
+        print(indent(str(matched_fsp_cfg.cfg_h), "    "))
+        print("  Include directory (-I):")
+        print(indent(str(matched_fsp_cfg.include_dir), "    "))
+        print()
+
+        for idx, fsp_cfg in enumerate(remaining, start=2):
+            print(f"[FSP Module Config #{idx}]")
+            print("  Config header full path:")
+            print(indent(str(fsp_cfg.cfg_h), "    "))
+            print("  Include directory (-I):")
+            print(indent(str(fsp_cfg.include_dir), "    "))
+            print()
+    else:
+        for idx, fsp_cfg in enumerate(fsp_module_cfg_list, start=1):
+            print(f"[FSP Module Config #{idx}]")
+            print("  Config header full path:")
+            print(indent(str(fsp_cfg.cfg_h), "    "))
+            print("  Include directory (-I):")
+            print(indent(str(fsp_cfg.include_dir), "    "))
+            print()
+
+
 def print_com_ports(ports: Sequence[ComPortInfo]) -> None:
     print_section("Serial / COM ports")
 
@@ -1285,6 +1493,8 @@ def print_suggested_flags(
     hal_data_headers: Sequence[HALDataInfo] = None,
     cmsis_headers: Sequence[CMSISInfo] = None,
     r_cgc_headers: Sequence[RCGCInfo] = None,
+    r_cgc_cfg_headers: Sequence[RCGCCfgInfo] = None,
+    fsp_module_cfg_headers: Sequence[FSPModuleCfgInfo] = None,
 ) -> None:
     if fsp_headers is None:
         fsp_headers = []
@@ -1296,6 +1506,10 @@ def print_suggested_flags(
         cmsis_headers = []
     if r_cgc_headers is None:
         r_cgc_headers = []
+    if r_cgc_cfg_headers is None:
+        r_cgc_cfg_headers = []
+    if fsp_module_cfg_headers is None:
+        fsp_module_cfg_headers = []
 
     print_section("Suggested -I include flags")
 
@@ -1383,6 +1597,24 @@ def print_suggested_flags(
 
     print()
 
+    print("R_CGC Configuration include paths:")
+    if r_cgc_cfg_headers:
+        for r in r_cgc_cfg_headers:
+            print(f'  -I"{r.include_dir}"')
+    else:
+        print("  (none found)")
+
+    print()
+
+    print("FSP Module Configuration include paths:")
+    if fsp_module_cfg_headers:
+        for f in fsp_module_cfg_headers:
+            print(f'  -I"{f.include_dir}"')
+    else:
+        print("  (none found)")
+
+    print()
+
 
 # =========================
 # Main
@@ -1409,6 +1641,8 @@ def main(argv: Sequence[str]) -> None:
     hal_data_headers = find_hal_data_headers(base_dir)
     cmsis_headers = find_cmsis_headers(base_dir)
     r_cgc_headers = find_r_cgc_headers(base_dir)
+    r_cgc_cfg_headers = find_r_cgc_cfg_headers(base_dir)
+    fsp_module_cfg_headers = find_fsp_module_cfg_headers(base_dir)
 
     extra_core_includes: Set[Path] = set()
     extra_tc_includes: Set[Path] = set()
@@ -1421,6 +1655,8 @@ def main(argv: Sequence[str]) -> None:
     print_hal_data(hal_data_headers, ports)
     print_cmsis(cmsis_headers, ports)
     print_r_cgc(r_cgc_headers, ports)
+    print_r_cgc_cfg(r_cgc_cfg_headers, ports)
+    print_fsp_module_cfg(fsp_module_cfg_headers, ports)
     print_com_ports(ports)
     
     matched_bsp, _ = find_matching_bsp(bsp_headers, ports)
@@ -1435,7 +1671,11 @@ def main(argv: Sequence[str]) -> None:
     suggested_cmsis = [matched_cmsis] if matched_cmsis else cmsis_headers
     matched_r_cgc, _ = find_matching_r_cgc(r_cgc_headers, ports)
     suggested_r_cgc = [matched_r_cgc] if matched_r_cgc else r_cgc_headers
-    print_suggested_flags(cores, toolchains, suggested_bsp, extra_core_includes, extra_tc_includes, suggested_fsp, suggested_bsp_cfg, suggested_hal_data, suggested_cmsis, suggested_r_cgc)
+    matched_r_cgc_cfg, _ = find_matching_r_cgc_cfg(r_cgc_cfg_headers, ports)
+    suggested_r_cgc_cfg = [matched_r_cgc_cfg] if matched_r_cgc_cfg else r_cgc_cfg_headers
+    matched_fsp_module_cfg, _ = find_matching_fsp_module_cfg(fsp_module_cfg_headers, ports)
+    suggested_fsp_module_cfg = [matched_fsp_module_cfg] if matched_fsp_module_cfg else fsp_module_cfg_headers
+    print_suggested_flags(cores, toolchains, suggested_bsp, extra_core_includes, extra_tc_includes, suggested_fsp, suggested_bsp_cfg, suggested_hal_data, suggested_cmsis, suggested_r_cgc, suggested_r_cgc_cfg, suggested_fsp_module_cfg)
 
 
 if __name__ == "__main__":
