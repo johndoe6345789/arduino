@@ -1,0 +1,12 @@
+{
+    "zencoder.shellTool.commandConfirmationPolicy": "neverAsk",
+    "C_Cpp.default.includePath": [
+        "C:\\Users\\richa\\Documents\\ArduinoData\\packages\\arduino\\hardware\\renesas_uno\\1.5.1\\cores\\arduino",
+        "C:\\Users\\richa\\Documents\\ArduinoData\\packages\\arduino\\hardware\\renesas_uno\\1.5.1\\cores\\arduino\\api",
+        "C:\\Users\\richa\\Documents\\ArduinoData\\packages\\arduino\\hardware\\renesas_uno\\1.5.1\\cores\\arduino\\api\\deprecated",
+        "C:\\Users\\richa\\Documents\\ArduinoData\\packages\\arduino\\tools\\arm-none-eabi-gcc\\7-2017q4\\arm-none-eabi\\include",
+        "C:\\Users\\richa\\Documents\\ArduinoData\\packages\\arduino\\tools\\arm-none-eabi-gcc\\7-2017q4\\lib\\gcc\\arm-none-eabi\\7.2.1\\include",
+        "C:\\Users\\richa\\Documents\\ArduinoData\\packages\\arduino\\hardware\\renesas_uno\\1.5.1\\variants\\NANOR4\\includes\\ra\\fsp\\inc\\api",
+        "C:\\Users\\richa\\Documents\\ArduinoData\\packages\\arduino\\hardware\\renesas_uno\\1.5.1\\variants\\NANOR4\\includes\\ra\\fsp\\inc"
+    ]
+}
