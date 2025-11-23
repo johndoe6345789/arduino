@@ -295,8 +295,6 @@ def find_bsp_api_headers(base_dir: Path) -> List[BSPInfo]:
     for header in base_dir.rglob("bsp_api.h"):
         if not header.is_file():
             continue
-        if header.parent.name != "include":
-            continue
         results.append(BSPInfo(bsp_api_h=header, include_dir=header.parent))
 
     return _dedupe_bsp(results)
@@ -313,6 +311,44 @@ def _dedupe_bsp(bsp_list: Iterable[BSPInfo]) -> List[BSPInfo]:
         unique.append(bsp)
 
     return unique
+
+
+def find_matching_bsp(
+    bsp_list: Sequence[BSPInfo],
+    ports: Sequence[ComPortInfo],
+) -> Tuple[Optional[BSPInfo], List[BSPInfo]]:
+    if not ports or not bsp_list:
+        return None, list(bsp_list)
+
+    detected_port = None
+    for p in ports:
+        if p.vid in (0x2341, 0x2A03):
+            detected_port = p
+            break
+    
+    if detected_port is None:
+        detected_port = ports[0] if ports else None
+
+    if detected_port is None:
+        return None, list(bsp_list)
+
+    board_short = short_board_name(detected_port.vid, detected_port.pid)
+    variant_names = _BOARD_TO_VARIANT.get(board_short)
+
+    if variant_names is None:
+        return None, list(bsp_list)
+
+    if not isinstance(variant_names, list):
+        variant_names = [variant_names]
+
+    for variant_name in variant_names:
+        for bsp in bsp_list:
+            bsp_path_lower = str(bsp.bsp_api_h).lower()
+            if variant_name.lower() in bsp_path_lower:
+                remaining = [b for b in bsp_list if b != bsp]
+                return bsp, remaining
+
+    return None, list(bsp_list)
 
 
 # =========================
@@ -389,7 +425,7 @@ _BOARD_MAP: Dict[Tuple[int, int], str] = {
     (0x2341, 0x0010): "Arduino Mega 2560",
     (0x2341, 0x8036): "Arduino Leonardo / Micro",
     (0x2341, 0x805A): "Arduino UNO R4 (family, best guess)",
-    (0x2341, 0x0074): "Arduino UNO R4 (VID 2341:0074, best guess)",
+    (0x2341, 0x0074): "Arduino R4 Family (UNO R4 WiFi/Minima or NANO R4)",
     (0x2A03, 0x0043): "Arduino Uno (2A03 VID)",
     (0x1A86, 0x7523): "CH340/CH341 USB–Serial (clone/adapter)",
     (0x10C4, 0xEA60): "Silicon Labs CP2102 USB–Serial",
@@ -414,6 +450,16 @@ def guess_board(vid: Optional[int], pid: Optional[int]) -> str:
     return "Unknown device (unmapped VID/PID)"
 
 
+_BOARD_TO_VARIANT: Dict[str, List[str]] = {
+    "UNO": ["UNOWIFIR4"],
+    "UNO R4": ["UNOWIFIR4"],
+    "NANO": ["NANOR4"],
+    "NANO R4": ["NANOR4"],
+    "MINIMA": ["MINIMA"],
+    "R4 FAMILY": ["NANOR4", "UNOWIFIR4", "MINIMA"],
+}
+
+
 def short_board_name(vid: Optional[int], pid: Optional[int]) -> str:
     if vid is None or pid is None:
         return "SCAN"
@@ -433,11 +479,11 @@ def short_board_name(vid: Optional[int], pid: Optional[int]) -> str:
     if key == (0x2341, 0x8036):
         return "LEONARDO"
 
-    if key in {
-        (0x2341, 0x805A),
-        (0x2341, 0x0074),
-    }:
+    if key == (0x2341, 0x805A):
         return "UNO R4"
+
+    if key == (0x2341, 0x0074):
+        return "R4 FAMILY"
 
     if vid == 0x1A86:
         return "CH340"
@@ -618,7 +664,7 @@ def print_toolchains(
     print()
 
 
-def print_bsp(bsp_list: Sequence[BSPInfo]) -> None:
+def print_bsp(bsp_list: Sequence[BSPInfo], ports: Sequence[ComPortInfo]) -> None:
     print_section("BSP API (bsp_api.h)")
     print(f"Discovered BSP headers: {len(bsp_list)}\n")
 
@@ -626,13 +672,31 @@ def print_bsp(bsp_list: Sequence[BSPInfo]) -> None:
         print("No BSP API headers (bsp_api.h) found.\n")
         return
 
-    for idx, bsp in enumerate(bsp_list, start=1):
-        print(f"[BSP #{idx}]")
+    matched_bsp, remaining = find_matching_bsp(bsp_list, ports)
+
+    if matched_bsp is not None:
+        print("[BSP #1] [MATCHED TO DETECTED BOARD]")
         print("  bsp_api.h full path:")
-        print(indent(str(bsp.bsp_api_h), "    "))
+        print(indent(str(matched_bsp.bsp_api_h), "    "))
         print("  Include directory (-I):")
-        print(indent(str(bsp.include_dir), "    "))
+        print(indent(str(matched_bsp.include_dir), "    "))
         print()
+
+        for idx, bsp in enumerate(remaining, start=2):
+            print(f"[BSP #{idx}]")
+            print("  bsp_api.h full path:")
+            print(indent(str(bsp.bsp_api_h), "    "))
+            print("  Include directory (-I):")
+            print(indent(str(bsp.include_dir), "    "))
+            print()
+    else:
+        for idx, bsp in enumerate(bsp_list, start=1):
+            print(f"[BSP #{idx}]")
+            print("  bsp_api.h full path:")
+            print(indent(str(bsp.bsp_api_h), "    "))
+            print("  Include directory (-I):")
+            print(indent(str(bsp.include_dir), "    "))
+            print()
 
 
 def print_com_ports(ports: Sequence[ComPortInfo]) -> None:
@@ -674,6 +738,7 @@ def print_com_ports(ports: Sequence[ComPortInfo]) -> None:
 def print_suggested_flags(
     cores: Sequence[CoreInfo],
     toolchains: Sequence[ToolchainInfo],
+    bsp_headers: Sequence[BSPInfo],
     extra_core_includes: Set[Path],
     extra_tc_includes: Set[Path],
 ) -> None:
@@ -707,6 +772,15 @@ def print_suggested_flags(
 
     print()
 
+    print("BSP API include paths:")
+    if bsp_headers:
+        for b in bsp_headers:
+            print(f'  -I"{b.include_dir}"')
+    else:
+        print("  (none found)")
+
+    print()
+
 
 # =========================
 # Main
@@ -734,9 +808,12 @@ def main(argv: Sequence[str]) -> None:
 
     print_cores(cores, extra_core_includes)
     print_toolchains(toolchains, extra_tc_includes)
-    print_bsp(bsp_headers)
+    print_bsp(bsp_headers, ports)
     print_com_ports(ports)
-    print_suggested_flags(cores, toolchains, extra_core_includes, extra_tc_includes)
+    
+    matched_bsp, _ = find_matching_bsp(bsp_headers, ports)
+    suggested_bsp = [matched_bsp] if matched_bsp else bsp_headers
+    print_suggested_flags(cores, toolchains, suggested_bsp, extra_core_includes, extra_tc_includes)
 
 
 if __name__ == "__main__":
