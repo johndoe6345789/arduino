@@ -643,8 +643,11 @@ void setLuaVariable(const char* name, float value) {
   
   // Create new variable
   if (emptySlot >= 0) {
-    strncpy(luaVariables[emptySlot].name, name, 15);
-    luaVariables[emptySlot].name[15] = '\0';
+    // Safely copy name with proper null termination
+    size_t len = strlen(name);
+    if (len > 15) len = 15;
+    memcpy(luaVariables[emptySlot].name, name, len);
+    luaVariables[emptySlot].name[len] = '\0';
     luaVariables[emptySlot].value = value;
     luaVariables[emptySlot].inUse = true;
   } else {
@@ -682,17 +685,30 @@ float evaluateExpression(const char* expr) {
     }
   }
   
-  // Handle simple binary operations
+  // Handle simple binary operations with proper precedence
+  // Find lowest precedence operator (+ and - before * and /)
   int opPos = -1;
   char op = '\0';
   
-  // Find operator (rightmost for left-to-right evaluation)
+  // First pass: look for + or - (lowest precedence)
   for (int i = exprStr.length() - 1; i >= 0; i--) {
     char c = exprStr.charAt(i);
-    if (c == '+' || c == '-' || c == '*' || c == '/') {
+    if (c == '+' || c == '-') {
       opPos = i;
       op = c;
       break;
+    }
+  }
+  
+  // Second pass: if no + or -, look for * or / (higher precedence)
+  if (opPos == -1) {
+    for (int i = exprStr.length() - 1; i >= 0; i--) {
+      char c = exprStr.charAt(i);
+      if (c == '*' || c == '/') {
+        opPos = i;
+        op = c;
+        break;
+      }
     }
   }
   
@@ -716,13 +732,31 @@ float evaluateExpression(const char* expr) {
   return 0.0f;
 }
 
+// Helper function to parse two integer arguments from function call
+bool parseTwoIntArgs(const String& funcCall, int& arg1, int& arg2) {
+  int startIdx = funcCall.indexOf('(') + 1;
+  int endIdx = funcCall.indexOf(')');
+  if (endIdx > startIdx) {
+    String args = funcCall.substring(startIdx, endIdx);
+    int commaPos = args.indexOf(',');
+    if (commaPos > 0) {
+      arg1 = args.substring(0, commaPos).toInt();
+      arg2 = args.substring(commaPos + 1).toInt();
+      return true;
+    }
+  }
+  return false;
+}
+
 void executeLuaCode(const char* code) {
   String codeStr = String(code);
   codeStr.trim();
   
   // Handle variable assignment: x = expression
   int eqPos = codeStr.indexOf('=');
-  if (eqPos > 0 && codeStr.charAt(eqPos - 1) != '=' && codeStr.charAt(eqPos + 1) != '=') {
+  if (eqPos > 0 && eqPos < codeStr.length() - 1) {
+    // Check it's not == comparison
+    if (codeStr.charAt(eqPos - 1) != '=' && codeStr.charAt(eqPos + 1) != '=') {
     String varName = codeStr.substring(0, eqPos);
     String expr = codeStr.substring(eqPos + 1);
     varName.trim();
@@ -736,46 +770,33 @@ void executeLuaCode(const char* code) {
     Serial.print(F(" = "));
     Serial.println(value);
     return;
+    }
   }
   
   // Handle function calls
   if (codeStr.startsWith("digitalWrite(")) {
-    int startIdx = codeStr.indexOf('(') + 1;
-    int endIdx = codeStr.indexOf(')');
-    if (endIdx > startIdx) {
-      String args = codeStr.substring(startIdx, endIdx);
-      int commaPos = args.indexOf(',');
-      if (commaPos > 0) {
-        int pin = args.substring(0, commaPos).toInt();
-        int value = args.substring(commaPos + 1).toInt();
-        digitalWrite(pin, value);
-        Serial.print(F("[bot] digitalWrite("));
-        Serial.print(pin);
-        Serial.print(F(", "));
-        Serial.print(value);
-        Serial.println(F(")"));
-        return;
-      }
+    int pin, value;
+    if (parseTwoIntArgs(codeStr, pin, value)) {
+      digitalWrite(pin, value);
+      Serial.print(F("[bot] digitalWrite("));
+      Serial.print(pin);
+      Serial.print(F(", "));
+      Serial.print(value);
+      Serial.println(F(")"));
+      return;
     }
   }
   
   if (codeStr.startsWith("analogWrite(")) {
-    int startIdx = codeStr.indexOf('(') + 1;
-    int endIdx = codeStr.indexOf(')');
-    if (endIdx > startIdx) {
-      String args = codeStr.substring(startIdx, endIdx);
-      int commaPos = args.indexOf(',');
-      if (commaPos > 0) {
-        int pin = args.substring(0, commaPos).toInt();
-        int value = args.substring(commaPos + 1).toInt();
-        analogWrite(pin, value);
-        Serial.print(F("[bot] analogWrite("));
-        Serial.print(pin);
-        Serial.print(F(", "));
-        Serial.print(value);
-        Serial.println(F(")"));
-        return;
-      }
+    int pin, value;
+    if (parseTwoIntArgs(codeStr, pin, value)) {
+      analogWrite(pin, value);
+      Serial.print(F("[bot] analogWrite("));
+      Serial.print(pin);
+      Serial.print(F(", "));
+      Serial.print(value);
+      Serial.println(F(")"));
+      return;
     }
   }
   
