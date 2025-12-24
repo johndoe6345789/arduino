@@ -691,12 +691,13 @@ float evaluateExpression(const char* expr) {
   char op = '\0';
   
   // Check for empty expression
-  if (exprStr.length() == 0) {
+  int exprLen = exprStr.length();
+  if (exprLen == 0) {
     return 0.0f;
   }
   
   // First pass: look for + or - (lowest precedence)
-  for (int i = (int)exprStr.length() - 1; i >= 0; i--) {
+  for (int i = exprLen - 1; i >= 0; i--) {
     char c = exprStr.charAt(i);
     if (c == '+' || c == '-') {
       opPos = i;
@@ -707,7 +708,7 @@ float evaluateExpression(const char* expr) {
   
   // Second pass: if no + or -, look for * or / (higher precedence)
   if (opPos == -1) {
-    for (int i = (int)exprStr.length() - 1; i >= 0; i--) {
+    for (int i = exprLen - 1; i >= 0; i--) {
       char c = exprStr.charAt(i);
       if (c == '*' || c == '/') {
         opPos = i;
