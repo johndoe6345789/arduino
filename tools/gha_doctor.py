@@ -91,6 +91,64 @@ def check_action_pins(content: dict, workflow_name: str) -> list[Issue]:
     return issues
 
 
+def _resolve_workdir(step: dict, job_default: str | None, repo_root: Path) -> Path:
+    override = step.get("working-directory")
+    target = override or job_default
+    return (repo_root / target).resolve() if target else repo_root.resolve()
+
+
+def _has_cmake_presets(path: Path) -> bool:
+    return any((path / candidate).exists() for candidate in ("CMakePresets.json", "CMakeUserPresets.json"))
+
+
+def check_command_contexts(content: dict, repo_root: Path, workflow_name: str) -> list[Issue]:
+    issues: list[Issue] = []
+    for job_id, job in (content.get("jobs") or {}).items():
+        job_default = ((job.get("defaults") or {}).get("run") or {}).get(
+            "working-directory"
+        )
+        for step in job.get("steps", []):
+            run_cmd = step.get("run")
+            if not isinstance(run_cmd, str):
+                continue
+
+            workdir = _resolve_workdir(step, job_default, repo_root)
+
+            if re.search(r"\b(ctest|cmake)\b[^\n]*--preset", run_cmd):
+                if not _has_cmake_presets(workdir):
+                    issues.append(
+                        Issue(
+                            level="ERROR",
+                            location=f"{workflow_name}:{job_id}",
+                            message="Preset-based CMake/CTest invocation found but no CMakePresets.json nearby.",
+                            suggestion="Add CMakePresets.json (or CMakeUserPresets.json) to the working directory or adjust the command.",
+                        )
+                    )
+
+            if re.search(r"\bconan\s+install\b", run_cmd):
+                if not any((workdir / candidate).exists() for candidate in ("conanfile.py", "conanfile.txt")):
+                    issues.append(
+                        Issue(
+                            level="ERROR",
+                            location=f"{workflow_name}:{job_id}",
+                            message="Conan install invoked without a conanfile in the working directory.",
+                            suggestion=f"Ensure conanfile.py or conanfile.txt exists under {workdir} or update the working-directory.",
+                        )
+                    )
+
+            if re.search(r"pip\s+install\s+conan\b", run_cmd) and "==" not in run_cmd:
+                issues.append(
+                    Issue(
+                        level="WARN",
+                        location=f"{workflow_name}:{job_id}",
+                        message="Conan is installed without a pinned version; newer releases may change defaults.",
+                        suggestion="Pin the Conan version (e.g., `python -m pip install conan==<version>`) to stabilize builds.",
+                    )
+                )
+
+    return issues
+
+
 def _path_matches(root: Path, pattern: str) -> bool:
     pattern = pattern.lstrip("!")
     # Path.glob understands ** patterns natively.
@@ -188,6 +246,7 @@ def inspect_workflow(path: Path, repo_root: Path) -> tuple[str, list[Issue]]:
     issues.extend(check_path_filters(content, repo_root, workflow_name))
     issues.extend(check_working_directories(content, repo_root, workflow_name))
     issues.extend(check_cache_paths(content, repo_root, workflow_name))
+    issues.extend(check_command_contexts(content, repo_root, workflow_name))
 
     return workflow_name, issues
 
@@ -207,6 +266,9 @@ def main(argv: list[str] | None = None) -> int:
               - Steps that point to non-existent working directories
               - cache-dependency-path entries that are stale
               - Actions that are not pinned to a commit SHA
+              - Preset-based cmake/ctest steps lacking CMakePresets.json nearby
+              - Conan install steps without a conanfile in the working directory
+              - Conan installs performed without pinning the tool version
             """
         ),
     )
@@ -221,6 +283,11 @@ def main(argv: list[str] | None = None) -> int:
         default=Path("."),
         type=Path,
         help="Repository root used to resolve relative paths",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Treat warnings as failures to gate CI on diagnostic findings.",
     )
     args = parser.parse_args(argv)
 
@@ -258,7 +325,7 @@ def main(argv: list[str] | None = None) -> int:
         for issue in issues:
             label = "❗" if issue.level == "ERROR" else "⚠️"
             print(f"  {label} {issue.level}: {issue.format()}")
-            if issue.level == "ERROR":
+            if issue.level == "ERROR" or (issue.level == "WARN" and args.strict):
                 overall_status = 1
 
     return overall_status

@@ -1,0 +1,27 @@
+name: Workflow doctor
+
+on:
+  push:
+    paths:
+      - '.github/workflows/**'
+      - 'tools/gha_doctor.py'
+      - 'README.md'
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - 'tools/gha_doctor.py'
+      - 'README.md'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - name: Set up Python
+        uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.1.0
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python3 -m pip install pyyaml
+      - name: Run workflow doctor
+        run: python3 tools/gha_doctor.py --strict
