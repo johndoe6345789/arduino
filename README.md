@@ -66,11 +66,13 @@ A Conan/Ninja C++ simulation core with a Next.js + Material UI dashboard lives i
 
 ## CI workflow diagnostics
 
-Use `tools/gha_doctor.py` to lint GitHub Actions workflows without running them. The script highlights stale path filters, missing working directories, unpinned actions, and cache paths that no longer exist.
+Use `tools/gha_doctor.py` to lint GitHub Actions workflows without running them. The script highlights stale path filters, missing working directories, unpinned actions, cache paths that no longer exist, preset-based CMake/CTest calls missing `CMakePresets.json`, and Conan install invocations that are missing a `conanfile` or rely on an unpinned Conan version.
 
 ```
 python3 -m pip install pyyaml
 python3 tools/gha_doctor.py
 ```
 
-Pass `--workflows` or `--root` to inspect alternate workflow folders or monorepo layouts.
+Pass `--workflows` or `--root` to inspect alternate workflow folders or monorepo layouts. Use `--strict` to fail the command on warnings.
+
+Automated linting runs in CI via the `Workflow doctor` workflow whenever workflow files or the doctor itself change.

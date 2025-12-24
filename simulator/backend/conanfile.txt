@@ -5,5 +5,3 @@ fmt/10.2.1
 CMakeDeps
 CMakeToolchain
 
-[layout]
-default
