@@ -2,6 +2,10 @@
 
 An Arduino sketch that executes Lua-like code through the serial port and responds to plain English commands.
 
+## 🚀 Quick Start
+
+New to Arduino Lua Bot? Check out **[QUICKSTART.md](QUICKSTART.md)** for a 5-minute setup guide with instant effects and games!
+
 ## Features
 
 - **Lua-like Code Execution**: Execute simple Lua code with variables and expressions
