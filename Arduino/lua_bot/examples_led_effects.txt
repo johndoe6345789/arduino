@@ -1,0 +1,382 @@
+# LED Effects Examples for Arduino Lua Bot
+# For Arduino R4 with RGB LED
+# Copy and paste these commands into the Serial Monitor at 115200 baud
+
+# ============================================
+# 1. RAINBOW CYCLE EFFECT
+# ============================================
+# Cycles through rainbow colors smoothly
+# Run each line one at a time, or create a script
+
+# Red to Yellow
+led 255 0 0
+delay 100
+led 255 64 0
+delay 100
+led 255 128 0
+delay 100
+led 255 192 0
+delay 100
+led 255 255 0
+delay 100
+
+# Yellow to Green
+led 192 255 0
+delay 100
+led 128 255 0
+delay 100
+led 64 255 0
+delay 100
+led 0 255 0
+delay 100
+
+# Green to Cyan
+led 0 255 64
+delay 100
+led 0 255 128
+delay 100
+led 0 255 192
+delay 100
+led 0 255 255
+delay 100
+
+# Cyan to Blue
+led 0 192 255
+delay 100
+led 0 128 255
+delay 100
+led 0 64 255
+delay 100
+led 0 0 255
+delay 100
+
+# Blue to Magenta
+led 64 0 255
+delay 100
+led 128 0 255
+delay 100
+led 192 0 255
+delay 100
+led 255 0 255
+delay 100
+
+# Magenta to Red
+led 255 0 192
+delay 100
+led 255 0 128
+delay 100
+led 255 0 64
+delay 100
+led 255 0 0
+delay 100
+
+# ============================================
+# 2. BREATHING EFFECT (Red)
+# ============================================
+# Smoothly fades LED in and out like breathing
+
+# Fade in
+lua setRGB(10, 0, 0)
+delay 50
+lua setRGB(20, 0, 0)
+delay 50
+lua setRGB(40, 0, 0)
+delay 50
+lua setRGB(60, 0, 0)
+delay 50
+lua setRGB(80, 0, 0)
+delay 50
+lua setRGB(100, 0, 0)
+delay 50
+lua setRGB(120, 0, 0)
+delay 50
+lua setRGB(150, 0, 0)
+delay 50
+lua setRGB(180, 0, 0)
+delay 50
+lua setRGB(210, 0, 0)
+delay 50
+lua setRGB(240, 0, 0)
+delay 50
+lua setRGB(255, 0, 0)
+delay 200
+
+# Fade out
+lua setRGB(240, 0, 0)
+delay 50
+lua setRGB(210, 0, 0)
+delay 50
+lua setRGB(180, 0, 0)
+delay 50
+lua setRGB(150, 0, 0)
+delay 50
+lua setRGB(120, 0, 0)
+delay 50
+lua setRGB(100, 0, 0)
+delay 50
+lua setRGB(80, 0, 0)
+delay 50
+lua setRGB(60, 0, 0)
+delay 50
+lua setRGB(40, 0, 0)
+delay 50
+lua setRGB(20, 0, 0)
+delay 50
+lua setRGB(10, 0, 0)
+delay 50
+lua setRGB(0, 0, 0)
+delay 500
+
+# ============================================
+# 3. POLICE LIGHTS EFFECT
+# ============================================
+# Alternates between red and blue like police lights
+
+# Red flash
+lua setRGB(255, 0, 0)
+delay 100
+lua setRGB(0, 0, 0)
+delay 100
+lua setRGB(255, 0, 0)
+delay 100
+lua setRGB(0, 0, 0)
+delay 100
+
+# Blue flash
+lua setRGB(0, 0, 255)
+delay 100
+lua setRGB(0, 0, 0)
+delay 100
+lua setRGB(0, 0, 255)
+delay 100
+lua setRGB(0, 0, 0)
+delay 100
+
+# Repeat the sequence
+lua setRGB(255, 0, 0)
+delay 100
+lua setRGB(0, 0, 0)
+delay 100
+lua setRGB(255, 0, 0)
+delay 100
+lua setRGB(0, 0, 0)
+delay 100
+lua setRGB(0, 0, 255)
+delay 100
+lua setRGB(0, 0, 0)
+delay 100
+lua setRGB(0, 0, 255)
+delay 100
+lua setRGB(0, 0, 0)
+delay 100
+
+# ============================================
+# 4. STROBE EFFECT
+# ============================================
+# Fast white flashing
+
+lua setRGB(255, 255, 255)
+delay 50
+lua setRGB(0, 0, 0)
+delay 50
+lua setRGB(255, 255, 255)
+delay 50
+lua setRGB(0, 0, 0)
+delay 50
+lua setRGB(255, 255, 255)
+delay 50
+lua setRGB(0, 0, 0)
+delay 50
+lua setRGB(255, 255, 255)
+delay 50
+lua setRGB(0, 0, 0)
+delay 200
+
+# ============================================
+# 5. RANDOM COLORS EFFECT
+# ============================================
+# Shows random colors using the random() function
+# Note: You'll need to run these manually to see different colors
+
+lua r = random(0, 256)
+lua g = random(0, 256)
+lua b = random(0, 256)
+lua print("Random color generated")
+status
+# Now manually set the LED with the random values you see from status
+# For example, if r=150, g=75, b=200:
+# lua setRGB(150, 75, 200)
+
+# Or use this simpler approach with fixed random values:
+lua setRGB(random(0, 256), random(0, 256), random(0, 256))
+delay 500
+
+# ============================================
+# 6. FIRE EFFECT
+# ============================================
+# Simulates flickering fire with red/orange/yellow
+
+lua setRGB(255, 40, 0)
+delay 80
+lua setRGB(255, 80, 0)
+delay 60
+lua setRGB(255, 20, 0)
+delay 100
+lua setRGB(255, 100, 0)
+delay 70
+lua setRGB(255, 60, 0)
+delay 90
+lua setRGB(255, 120, 10)
+delay 50
+lua setRGB(255, 30, 0)
+delay 110
+lua setRGB(255, 90, 5)
+delay 60
+
+# ============================================
+# 7. OCEAN WAVE EFFECT
+# ============================================
+# Smooth blue-cyan transitions like ocean waves
+
+lua setRGB(0, 50, 150)
+delay 200
+lua setRGB(0, 80, 180)
+delay 200
+lua setRGB(0, 120, 200)
+delay 200
+lua setRGB(0, 150, 220)
+delay 200
+lua setRGB(0, 180, 240)
+delay 200
+lua setRGB(0, 150, 220)
+delay 200
+lua setRGB(0, 120, 200)
+delay 200
+lua setRGB(0, 80, 180)
+delay 200
+lua setRGB(0, 50, 150)
+delay 200
+
+# ============================================
+# 8. SUNSET EFFECT
+# ============================================
+# Transitions from bright yellow to deep red
+
+lua setRGB(255, 255, 100)
+delay 300
+lua setRGB(255, 220, 80)
+delay 300
+lua setRGB(255, 180, 60)
+delay 300
+lua setRGB(255, 140, 40)
+delay 300
+lua setRGB(255, 100, 20)
+delay 300
+lua setRGB(255, 60, 10)
+delay 300
+lua setRGB(255, 30, 0)
+delay 300
+lua setRGB(200, 20, 0)
+delay 300
+lua setRGB(150, 10, 0)
+delay 300
+lua setRGB(100, 5, 0)
+delay 300
+
+# ============================================
+# 9. PARTY MODE
+# ============================================
+# Fast color changes
+
+lua setRGB(255, 0, 0)
+delay 150
+lua setRGB(0, 255, 0)
+delay 150
+lua setRGB(0, 0, 255)
+delay 150
+lua setRGB(255, 255, 0)
+delay 150
+lua setRGB(255, 0, 255)
+delay 150
+lua setRGB(0, 255, 255)
+delay 150
+lua setRGB(255, 128, 0)
+delay 150
+lua setRGB(128, 0, 255)
+delay 150
+
+# ============================================
+# 10. CANDLE FLICKER EFFECT
+# ============================================
+# Simulates a candle flame
+
+lua setRGB(255, 147, 41)
+delay 100
+lua setRGB(255, 130, 30)
+delay 120
+lua setRGB(255, 160, 50)
+delay 80
+lua setRGB(255, 140, 35)
+delay 110
+lua setRGB(255, 155, 45)
+delay 90
+lua setRGB(255, 145, 38)
+delay 105
+lua setRGB(255, 135, 32)
+delay 95
+lua setRGB(255, 150, 42)
+delay 85
+
+# ============================================
+# 11. LIGHTNING EFFECT
+# ============================================
+# Quick bright flashes
+
+lua setRGB(0, 0, 0)
+delay 1000
+lua setRGB(255, 255, 255)
+delay 50
+lua setRGB(0, 0, 0)
+delay 30
+lua setRGB(255, 255, 255)
+delay 80
+lua setRGB(0, 0, 0)
+delay 1500
+lua setRGB(255, 255, 255)
+delay 40
+lua setRGB(0, 0, 0)
+
+# ============================================
+# 12. HEARTBEAT EFFECT
+# ============================================
+# Double pulse like a heartbeat
+
+lua setRGB(255, 0, 0)
+delay 100
+lua setRGB(100, 0, 0)
+delay 100
+lua setRGB(255, 0, 0)
+delay 100
+lua setRGB(0, 0, 0)
+delay 400
+lua setRGB(255, 0, 0)
+delay 100
+lua setRGB(100, 0, 0)
+delay 100
+lua setRGB(255, 0, 0)
+delay 100
+lua setRGB(0, 0, 0)
+delay 400
+
+# ============================================
+# TIPS FOR BEST RESULTS
+# ============================================
+# 1. Copy multiple lines at once and paste into Serial Monitor
+# 2. For smoother effects, reduce delay times
+# 3. Experiment with different color values (0-255 for each channel)
+# 4. Combine effects by mixing different patterns
+# 5. Use 'led off' to turn off the LED when done
+# 6. The setRGB() function is easier to use than led command in Lua
+
+# Turn off LED when done
+led off

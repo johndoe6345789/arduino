@@ -1,0 +1,388 @@
+# Interactive Games for Arduino Lua Bot
+# Play these games over the Serial Monitor at 115200 baud
+# For Arduino R4 with RGB LED
+
+# ============================================
+# GAME 1: NUMBER GUESSING GAME
+# ============================================
+# The Arduino picks a random number, you try to guess it!
+
+# === SETUP ===
+lua print("=== NUMBER GUESSING GAME ===")
+lua print("I'm thinking of a number between 1 and 100!")
+lua secret = random(1, 101)
+lua guesses = 0
+lua print("Type your guess as: lua guess = YOUR_NUMBER")
+
+# === HOW TO PLAY ===
+# 1. Enter your guess like this:
+lua guess = 50
+
+# 2. Check if you're right:
+lua guesses = guesses + 1
+status
+
+# 3. Compare your guess to the secret (you'll need to remember the secret value from status)
+# If your guess is lower, try a higher number
+# If your guess is higher, try a lower number
+# Keep guessing until you get it!
+
+# 4. When you think you got it, check:
+lua result = guess - secret
+# If result is 0, you won!
+
+# 5. The LED will help you:
+# Far away = RED
+lua setRGB(255, 0, 0)
+# Getting closer = YELLOW
+lua setRGB(255, 255, 0)
+# Very close = GREEN
+lua setRGB(0, 255, 0)
+# Correct = BLUE (flashing)
+lua setRGB(0, 0, 255)
+
+# === SIMPLIFIED VERSION ===
+# Just for fun, try guessing and I'll give you hints!
+
+lua print("=== QUICK GUESS GAME ===")
+lua target = random(1, 11)
+lua print("I picked a number from 1 to 10")
+# Make your guess:
+lua myguess = 5
+# Check the status to see both numbers!
+status
+
+# ============================================
+# GAME 2: REACTION TIME GAME
+# ============================================
+# How fast can you react when the LED turns green?
+
+lua print("=== REACTION TIME GAME ===")
+lua print("Watch the LED... when it turns GREEN, type a key!")
+lua print("Starting in 3...")
+delay 1000
+lua print("2...")
+delay 1000
+lua print("1...")
+delay 1000
+
+# LED turns RED - wait for it...
+lua setRGB(255, 0, 0)
+lua print("RED - Wait for green...")
+delay 2000
+
+# LED turns YELLOW - get ready...
+lua setRGB(255, 255, 0)
+lua print("YELLOW - Get ready...")
+delay 1000
+
+# LED turns GREEN - GO!
+lua setRGB(0, 255, 0)
+lua startTime = millis()
+lua print("GREEN - Type any key NOW!")
+
+# After you press a key, check your time:
+lua endTime = millis()
+lua reactionTime = endTime - startTime
+lua print("Your reaction time (ms):")
+status
+
+# LED feedback based on speed:
+# Under 300ms = Excellent! (Blue)
+lua setRGB(0, 0, 255)
+# 300-600ms = Good! (Green)  
+lua setRGB(0, 255, 0)
+# Over 600ms = Try again! (Red)
+lua setRGB(255, 0, 0)
+
+# ============================================
+# GAME 3: SIMON SAYS COLOR MEMORY
+# ============================================
+# Remember and repeat the color sequence!
+
+lua print("=== SIMON SAYS - COLOR MEMORY ===")
+lua print("Watch and remember the color sequence!")
+
+# === ROUND 1 - One color ===
+lua print("ROUND 1: Remember this!")
+lua setRGB(255, 0, 0)
+delay 500
+lua setRGB(0, 0, 0)
+delay 500
+lua print("What color was it? (red=1, green=2, blue=3)")
+# Your answer:
+lua answer1 = 1
+lua correct1 = 1
+status
+
+# === ROUND 2 - Two colors ===
+lua print("ROUND 2: Remember this sequence!")
+lua setRGB(255, 0, 0)
+delay 500
+lua setRGB(0, 0, 0)
+delay 300
+lua setRGB(0, 255, 0)
+delay 500
+lua setRGB(0, 0, 0)
+delay 500
+lua print("Sequence: RED then GREEN")
+lua print("Enter: lua seq2a = ? and lua seq2b = ?")
+# Your answer:
+lua seq2a = 1
+lua seq2b = 2
+status
+
+# === ROUND 3 - Three colors ===
+lua print("ROUND 3: Three colors!")
+lua setRGB(0, 0, 255)
+delay 500
+lua setRGB(0, 0, 0)
+delay 300
+lua setRGB(255, 0, 0)
+delay 500
+lua setRGB(0, 0, 0)
+delay 300
+lua setRGB(0, 255, 0)
+delay 500
+lua setRGB(0, 0, 0)
+delay 500
+lua print("What was the sequence?")
+# Your answers (1=red, 2=green, 3=blue):
+lua seq3a = 3
+lua seq3b = 1
+lua seq3c = 2
+status
+
+# Victory celebration!
+lua print("Great memory!")
+lua setRGB(255, 255, 255)
+delay 200
+lua setRGB(0, 0, 0)
+delay 200
+lua setRGB(255, 255, 255)
+delay 200
+lua setRGB(0, 0, 0)
+
+# ============================================
+# GAME 4: BUTTON MASH COUNTER
+# ============================================
+# How many times can you press Enter in 10 seconds?
+
+lua print("=== BUTTON MASH GAME ===")
+lua print("Press Enter as many times as you can!")
+lua print("Starting in 3...")
+delay 1000
+lua print("2...")
+delay 1000
+lua print("1...")
+delay 1000
+lua print("GO!")
+lua startTime = millis()
+lua counter = 0
+
+# Set LED to green to indicate game is active
+lua setRGB(0, 255, 0)
+
+# Keep pressing Enter and counting:
+# After each press, type:
+lua counter = counter + 1
+
+# After 10 seconds, check your score:
+lua endTime = millis()
+lua elapsed = endTime - startTime
+lua print("Time's up!")
+status
+lua setRGB(255, 0, 0)
+
+# ============================================
+# GAME 5: RGB MIXING CHALLENGE
+# ============================================
+# Can you mix RGB values to match the target color?
+
+lua print("=== RGB MIXING CHALLENGE ===")
+lua print("Try to match this color:")
+
+# Target color
+lua targetR = 128
+lua targetG = 64
+lua targetB = 200
+lua setRGB(128, 64, 200)
+delay 2000
+lua print("Did you see it? Now try to recreate it!")
+lua setRGB(0, 0, 0)
+
+# Your attempt:
+lua print("Enter: lua setRGB(?, ?, ?)")
+# For example:
+lua setRGB(130, 60, 210)
+delay 2000
+
+# Check how close you got:
+lua diffR = targetR - 130
+lua diffG = targetG - 60
+lua diffB = targetB - 210
+lua print("Your differences from target:")
+status
+
+# Show target again:
+lua print("Target color was:")
+lua setRGB(128, 64, 200)
+
+# ============================================
+# GAME 6: TIMING CHALLENGE
+# ============================================
+# Can you stop the timer at exactly 5 seconds?
+
+lua print("=== TIMING CHALLENGE ===")
+lua print("Stop the timer at exactly 5.0 seconds!")
+lua print("Press Enter to start...")
+# Press Enter, then type:
+lua startTime = millis()
+lua setRGB(255, 255, 0)
+
+lua print("Timer running... Press Enter when you think 5 seconds passed!")
+# Press Enter when you think 5 seconds have passed, then type:
+lua stopTime = millis()
+lua elapsed = stopTime - startTime
+lua seconds = elapsed / 1000
+lua print("Your time:")
+status
+
+# Check how close:
+lua error = seconds - 5
+lua print("Error from 5 seconds:")
+status
+
+# LED feedback:
+# Within 0.2 seconds = Perfect! (Green)
+lua setRGB(0, 255, 0)
+# Within 0.5 seconds = Good! (Blue)
+lua setRGB(0, 0, 255)
+# Over 0.5 seconds = Try again! (Red)
+lua setRGB(255, 0, 0)
+
+# ============================================
+# GAME 7: RAINBOW SPEED RUN
+# ============================================
+# Race through the rainbow as fast as you can!
+
+lua print("=== RAINBOW SPEED RUN ===")
+lua print("Type each color command as fast as you can!")
+lua startTime = millis()
+lua setRGB(0, 0, 0)
+
+lua print("GO! Type these in order:")
+lua print("1. lua setRGB(255, 0, 0)")
+# Type it!
+lua setRGB(255, 0, 0)
+delay 100
+
+lua print("2. lua setRGB(255, 128, 0)")
+# Type it!
+lua setRGB(255, 128, 0)
+delay 100
+
+lua print("3. lua setRGB(255, 255, 0)")
+# Type it!
+lua setRGB(255, 255, 0)
+delay 100
+
+lua print("4. lua setRGB(0, 255, 0)")
+# Type it!
+lua setRGB(0, 255, 0)
+delay 100
+
+lua print("5. lua setRGB(0, 0, 255)")
+# Type it!
+lua setRGB(0, 0, 255)
+delay 100
+
+lua print("6. lua setRGB(75, 0, 130)")
+# Type it!
+lua setRGB(75, 0, 130)
+delay 100
+
+lua print("7. lua setRGB(148, 0, 211)")
+# Type it!
+lua setRGB(148, 0, 211)
+
+lua endTime = millis()
+lua totalTime = endTime - startTime
+lua print("FINISHED! Your time (ms):")
+status
+
+# Victory flash!
+lua setRGB(255, 255, 255)
+delay 100
+lua setRGB(0, 0, 0)
+delay 100
+lua setRGB(255, 255, 255)
+delay 100
+lua setRGB(0, 0, 0)
+
+# ============================================
+# GAME 8: BINARY COUNTER GAME
+# ============================================
+# Learn binary with LED colors!
+
+lua print("=== BINARY COUNTER GAME ===")
+lua print("Count in binary using LED colors!")
+lua print("R=Red bit, G=Green bit, B=Blue bit")
+lua print("Each can be ON(255) or OFF(0)")
+
+# 0 in binary (000) = All off
+lua print("0 = 000 (all off)")
+lua setRGB(0, 0, 0)
+delay 1000
+
+# 1 in binary (001) = Blue on
+lua print("1 = 001 (blue)")
+lua setRGB(0, 0, 255)
+delay 1000
+
+# 2 in binary (010) = Green on
+lua print("2 = 010 (green)")
+lua setRGB(0, 255, 0)
+delay 1000
+
+# 3 in binary (011) = Green + Blue
+lua print("3 = 011 (cyan)")
+lua setRGB(0, 255, 255)
+delay 1000
+
+# 4 in binary (100) = Red on
+lua print("4 = 100 (red)")
+lua setRGB(255, 0, 0)
+delay 1000
+
+# 5 in binary (101) = Red + Blue
+lua print("5 = 101 (magenta)")
+lua setRGB(255, 0, 255)
+delay 1000
+
+# 6 in binary (110) = Red + Green
+lua print("6 = 110 (yellow)")
+lua setRGB(255, 255, 0)
+delay 1000
+
+# 7 in binary (111) = All on
+lua print("7 = 111 (white)")
+lua setRGB(255, 255, 255)
+delay 1000
+
+lua print("You counted to 7 in binary!")
+lua setRGB(0, 0, 0)
+
+# ============================================
+# GAME TIPS
+# ============================================
+# 1. Games work best by copying commands one section at a time
+# 2. Use 'status' command to check your variables
+# 3. Use 'reset' to clear variables and start a new game
+# 4. Be patient - serial communication has some delay
+# 5. Have fun and experiment!
+
+# Reset when done:
+reset
+led off
+lua print("Games finished! Type 'reset' to play again!")
