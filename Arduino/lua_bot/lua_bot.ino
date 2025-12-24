@@ -347,8 +347,13 @@ void handleHelpCommand(uint8_t argc, const char **argv) {
   Serial.println(F("[bot] === Lua Examples ==="));
   Serial.println(F("[bot]   lua x = 10"));
   Serial.println(F("[bot]   lua y = x + 5"));
+  Serial.println(F("[bot]   lua setRGB(255, 0, 0)"));
   Serial.println(F("[bot]   lua digitalWrite(13, 1)"));
   Serial.println(F("[bot]   lua delay(1000)"));
+  Serial.println();
+  Serial.println(F("[bot] === Example Files ==="));
+  Serial.println(F("[bot]   See examples_led_effects.txt for LED animations"));
+  Serial.println(F("[bot]   See examples_games.txt for interactive games"));
 }
 
 void handleLedCommand(uint8_t argc, const char **argv) {
@@ -754,6 +759,43 @@ bool parseTwoIntArgs(const String& funcCall, int& arg1, int& arg2) {
   return false;
 }
 
+// Helper function to parse three integer arguments from function call
+bool parseThreeIntArgs(const String& funcCall, int& arg1, int& arg2, int& arg3) {
+  int startIdx = funcCall.indexOf('(') + 1;
+  int endIdx = funcCall.indexOf(')');
+  if (endIdx > startIdx) {
+    String args = funcCall.substring(startIdx, endIdx);
+    int firstComma = args.indexOf(',');
+    if (firstComma > 0) {
+      int secondComma = args.indexOf(',', firstComma + 1);
+      if (secondComma > firstComma) {
+        arg1 = args.substring(0, firstComma).toInt();
+        arg2 = args.substring(firstComma + 1, secondComma).toInt();
+        arg3 = args.substring(secondComma + 1).toInt();
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Helper function to set RGB LED with proper inversion handling
+void setRGBLed(int r, int g, int b) {
+  r = constrain(r, 0, 255);
+  g = constrain(g, 0, 255);
+  b = constrain(b, 0, 255);
+  
+  if (LED_INVERTED) {
+    analogWrite(LED_R_PIN, 255 - r);
+    analogWrite(LED_G_PIN, 255 - g);
+    analogWrite(LED_B_PIN, 255 - b);
+  } else {
+    analogWrite(LED_R_PIN, r);
+    analogWrite(LED_G_PIN, g);
+    analogWrite(LED_B_PIN, b);
+  }
+}
+
 void executeLuaCode(const char* code) {
   String codeStr = String(code);
   codeStr.trim();
@@ -885,6 +927,69 @@ void executeLuaCode(const char* code) {
       Serial.println(msg);
       return;
     }
+  }
+  
+  if (codeStr.startsWith("setRGB(")) {
+    int r, g, b;
+    if (parseThreeIntArgs(codeStr, r, g, b)) {
+      setRGBLed(r, g, b);
+      Serial.print(F("[bot] setRGB("));
+      Serial.print(r);
+      Serial.print(F(", "));
+      Serial.print(g);
+      Serial.print(F(", "));
+      Serial.print(b);
+      Serial.println(F(")"));
+      return;
+    }
+  }
+  
+  if (codeStr.startsWith("millis()")) {
+    unsigned long ms = millis();
+    Serial.print(F("[bot] millis() = "));
+    Serial.println(ms);
+    return;
+  }
+  
+  if (codeStr.startsWith("random(")) {
+    int startIdx = codeStr.indexOf('(') + 1;
+    int endIdx = codeStr.indexOf(')');
+    if (endIdx > startIdx) {
+      String args = codeStr.substring(startIdx, endIdx);
+      int commaPos = args.indexOf(',');
+      long randVal;
+      if (commaPos > 0) {
+        // Two arguments: random(min, max)
+        int minVal = args.substring(0, commaPos).toInt();
+        int maxVal = args.substring(commaPos + 1).toInt();
+        randVal = random(minVal, maxVal);
+      } else {
+        // One argument: random(max)
+        int maxVal = args.toInt();
+        randVal = random(maxVal);
+      }
+      Serial.print(F("[bot] random() = "));
+      Serial.println(randVal);
+      return;
+    }
+  }
+  
+  if (codeStr.startsWith("serialAvailable()")) {
+    int available = Serial.available();
+    Serial.print(F("[bot] serialAvailable() = "));
+    Serial.println(available);
+    return;
+  }
+  
+  if (codeStr.startsWith("serialRead()")) {
+    if (Serial.available() > 0) {
+      int value = Serial.read();
+      Serial.print(F("[bot] serialRead() = "));
+      Serial.println(value);
+    } else {
+      Serial.println(F("[bot] serialRead() = -1 (no data)"));
+    }
+    return;
   }
   
   // If nothing matched, try to evaluate as expression and print result

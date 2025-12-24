@@ -2,6 +2,20 @@
 
 This file contains example commands you can try with the Arduino Lua Bot.
 
+## New Example Files!
+
+**🎨 LED Effects**: Check out `examples_led_effects.txt` for fun LED animations including:
+- Rainbow cycles, breathing effects, police lights
+- Fire and ocean wave effects
+- Party mode, lightning, and more!
+
+**🎮 Games**: Check out `examples_games.txt` for interactive games including:
+- Number guessing game
+- Reaction time challenge
+- Simon Says color memory
+- RGB mixing challenge
+- And more fun games!
+
 ## Getting Started
 
 After uploading the sketch and opening Serial Monitor at 115200 baud:

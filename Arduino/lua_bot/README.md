@@ -72,6 +72,20 @@ lua delay(1000)
 lua print("Hello from Lua!")
 ```
 
+### New Functions for LED Effects and Games
+
+```
+lua setRGB(255, 0, 0)          # Set RGB LED to red
+lua setRGB(0, 255, 128)        # Set RGB LED to custom color
+
+lua t = millis()               # Get current time in milliseconds
+lua r = random(0, 256)         # Random number from 0-255
+lua r = random(100)            # Random number from 0-99
+
+lua available = serialAvailable()  # Check for serial input
+lua byte = serialRead()            # Read one byte from serial
+```
+
 ### Supported Lua Functions
 
 - `digitalWrite(pin, value)` - Set digital pin HIGH (1) or LOW (0)
@@ -81,6 +95,11 @@ lua print("Hello from Lua!")
 - `pinMode(pin, mode)` - Set pin mode (INPUT, OUTPUT, INPUT_PULLUP)
 - `delay(ms)` - Wait for milliseconds
 - `print(message)` - Print message to serial
+- `setRGB(r, g, b)` - Set RGB LED color (0-255 for each channel)
+- `millis()` - Get current time in milliseconds
+- `random(max)` or `random(min, max)` - Generate random number
+- `serialAvailable()` - Check if serial data is available
+- `serialRead()` - Read one byte from serial
 
 ### Variable Storage
 
@@ -124,6 +143,11 @@ end
 | `help [cmd]` | Show help | `help led` |
 
 ## Examples
+
+For complete examples, see:
+- **examples_led_effects.txt** - Fun LED animations and effects (rainbow, breathing, fire, etc.)
+- **examples_games.txt** - Interactive games you can play over serial (reaction time, memory, etc.)
+- **EXAMPLES.md** - Basic command examples
 
 ### Blink an LED
 
