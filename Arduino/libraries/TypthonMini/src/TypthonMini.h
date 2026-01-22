@@ -54,6 +54,17 @@ class Tokenizer {
     Token readString();
 };
 
+enum class TypeKind {
+    Int,
+    Str,
+    Bool,
+    List,
+    Dict,
+    Function,
+    None,
+    Any
+};
+
 enum class ValueKind {
     None,
     Number,
@@ -66,6 +77,26 @@ enum class ValueKind {
     Function,
     Class,
     Instance
+};
+
+struct Type {
+    TypeKind kind = TypeKind::None;
+    std::shared_ptr<Type> elementType;  // for list[T]
+    std::shared_ptr<Type> keyType;      // for dict[K,V]
+    std::shared_ptr<Type> valueType;    // for dict[K,V]
+    std::vector<std::shared_ptr<Type>> paramTypes;  // for function params
+    std::shared_ptr<Type> returnType;   // for function return
+
+    static std::shared_ptr<Type> makeInt();
+    static std::shared_ptr<Type> makeStr();
+    static std::shared_ptr<Type> makeBool();
+    static std::shared_ptr<Type> makeNone();
+    static std::shared_ptr<Type> makeList(std::shared_ptr<Type> elemType);
+    static std::shared_ptr<Type> makeDict(std::shared_ptr<Type> kType, std::shared_ptr<Type> vType);
+    static std::shared_ptr<Type> makeFunction(std::vector<std::shared_ptr<Type>> params, std::shared_ptr<Type> ret);
+
+    bool matches(const std::shared_ptr<Type> &other) const;
+    std::string toString() const;
 };
 
 struct Value {
@@ -96,6 +127,7 @@ struct Value {
 
 struct Environment {
     std::map<std::string, Value> values;
+    std::map<std::string, std::shared_ptr<Type>> types;
     std::shared_ptr<Environment> parent;
     std::vector<std::string> globalsDeclared;
     std::vector<std::string> nonlocalsDeclared;
@@ -110,6 +142,8 @@ struct Environment {
 
 struct FunctionObject {
     std::vector<std::string> parameters;
+    std::vector<std::shared_ptr<Type>> parameterTypes;
+    std::shared_ptr<Type> returnType;
     std::vector<std::shared_ptr<Statement>> body;
     std::shared_ptr<Environment> closure;
     bool isLambda = false;
@@ -139,7 +173,22 @@ struct Statement {
     virtual ExecutionResult execute(Interpreter &interp, std::shared_ptr<Environment> env) = 0;
 };
 
+enum class ExpressionKind {
+    Literal,
+    Variable,
+    Unary,
+    Binary,
+    Call,
+    Attribute,
+    Index,
+    List,
+    Dict,
+    Lambda
+};
+
 struct Expression {
+    ExpressionKind kind;
+    explicit Expression(ExpressionKind k) : kind(k) {}
     virtual ~Expression() = default;
     virtual Value evaluate(Interpreter &interp, std::shared_ptr<Environment> env) = 0;
 };
@@ -152,6 +201,10 @@ class Interpreter {
     Value callFunction(const Value &callable, const std::vector<Value> &args);
     Value getAttribute(const Value &base, const std::string &name);
     bool setAttribute(Value &base, const std::string &name, const Value &value);
+    ExecutionResult executeBlock(const std::vector<std::shared_ptr<Statement>> &stmts,
+                                 std::shared_ptr<Environment> env);
+
+    std::shared_ptr<Type> currentFunctionReturnType;
 
   private:
     Tokenizer tokenizer;
@@ -204,8 +257,7 @@ class Interpreter {
 
     std::shared_ptr<Expression> parsePrimary();
 
-    ExecutionResult executeBlock(const std::vector<std::shared_ptr<Statement>> &stmts,
-                                 std::shared_ptr<Environment> env);
+    std::shared_ptr<Type> parseType();
 
     void addBuiltin(const std::string &name, const std::function<Value(const std::vector<Value> &)> &fn);
     void initializeBuiltins();

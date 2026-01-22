@@ -49,7 +49,114 @@ void printError(const char *message) {
     Serial.println(message);
 }
 
+bool typeMatchesValue(const std::shared_ptr<Type> &type, const Value &val) {
+    if (!type) return true;
+    switch (type->kind) {
+        case TypeKind::Int: return val.kind == ValueKind::Number;
+        case TypeKind::Str: return val.kind == ValueKind::Text;
+        case TypeKind::Bool: return val.kind == ValueKind::Boolean;
+        case TypeKind::List: return val.kind == ValueKind::List;
+        case TypeKind::Dict: return val.kind == ValueKind::Dict;
+        case TypeKind::None: return val.kind == ValueKind::None;
+        case TypeKind::Any: return true;
+        default: return true;
+    }
+}
+
+static bool typeMatches(const Value &val, const std::shared_ptr<Type> &type) {
+    if (!type) return true;
+    switch (type->kind) {
+        case TypeKind::Int: return val.kind == ValueKind::Number;
+        case TypeKind::Str: return val.kind == ValueKind::Text;
+        case TypeKind::Bool: return val.kind == ValueKind::Boolean;
+        case TypeKind::List: return val.kind == ValueKind::List;
+        case TypeKind::Dict: return val.kind == ValueKind::Dict;
+        case TypeKind::None: return val.kind == ValueKind::None;
+        default: return true;
+    }
+}
+
+static const char* valueKindToString(ValueKind kind) {
+    switch (kind) {
+        case ValueKind::Number: return "int";
+        case ValueKind::Text: return "str";
+        case ValueKind::Boolean: return "bool";
+        case ValueKind::List: return "list";
+        case ValueKind::Dict: return "dict";
+        case ValueKind::None: return "None";
+        default: return "unknown";
+    }
+}
+
 } // namespace
+
+std::shared_ptr<Type> Type::makeInt() {
+    auto t = std::make_shared<Type>();
+    t->kind = TypeKind::Int;
+    return t;
+}
+
+std::shared_ptr<Type> Type::makeStr() {
+    auto t = std::make_shared<Type>();
+    t->kind = TypeKind::Str;
+    return t;
+}
+
+std::shared_ptr<Type> Type::makeBool() {
+    auto t = std::make_shared<Type>();
+    t->kind = TypeKind::Bool;
+    return t;
+}
+
+std::shared_ptr<Type> Type::makeNone() {
+    auto t = std::make_shared<Type>();
+    t->kind = TypeKind::None;
+    return t;
+}
+
+std::shared_ptr<Type> Type::makeList(std::shared_ptr<Type> elemType) {
+    auto t = std::make_shared<Type>();
+    t->kind = TypeKind::List;
+    t->elementType = elemType;
+    return t;
+}
+
+std::shared_ptr<Type> Type::makeDict(std::shared_ptr<Type> kType, std::shared_ptr<Type> vType) {
+    auto t = std::make_shared<Type>();
+    t->kind = TypeKind::Dict;
+    t->keyType = kType;
+    t->valueType = vType;
+    return t;
+}
+
+std::shared_ptr<Type> Type::makeFunction(std::vector<std::shared_ptr<Type>> params, std::shared_ptr<Type> ret) {
+    auto t = std::make_shared<Type>();
+    t->kind = TypeKind::Function;
+    t->paramTypes = std::move(params);
+    t->returnType = ret;
+    return t;
+}
+
+bool Type::matches(const std::shared_ptr<Type> &other) const {
+    if (!other) return true;
+    if (kind == TypeKind::Any || other->kind == TypeKind::Any) return true;
+    if (kind != other->kind) return false;
+    return true;
+}
+
+std::string Type::toString() const {
+    switch (kind) {
+        case TypeKind::Int: return "int";
+        case TypeKind::Str: return "str";
+        case TypeKind::Bool: return "bool";
+        case TypeKind::List: return "list";
+        case TypeKind::Dict: return "dict";
+        case TypeKind::None: return "None";
+        case TypeKind::Any: return "Any";
+        case TypeKind::Function: return "function";
+        default: return "unknown";
+    }
+}
 
 Tokenizer::Tokenizer(const char *source) : cursor(source) { indentStack.push_back(0); }
 
@@ -392,13 +499,13 @@ static bool valuesEqual(const Value &a, const Value &b) {
 
 struct LiteralExpression : public Expression {
     Value value;
-    explicit LiteralExpression(const Value &v) : value(v) {}
+    explicit LiteralExpression(const Value &v) : Expression(ExpressionKind::Literal), value(v) {}
     Value evaluate(Interpreter &, std::shared_ptr<Environment>) override { return value; }
 };
 
 struct VariableExpression : public Expression {
     std::string name;
-    explicit VariableExpression(std::string n) : name(std::move(n)) {}
+    explicit VariableExpression(std::string n) : Expression(ExpressionKind::Variable), name(std::move(n)) {}
     Value evaluate(Interpreter &, std::shared_ptr<Environment> env) override {
         auto found = env->get(name);
         if (!found.has_value()) {
@@ -412,7 +519,7 @@ struct VariableExpression : public Expression {
 struct UnaryExpression : public Expression {
     std::string op;
     std::shared_ptr<Expression> right;
-    UnaryExpression(std::string o, std::shared_ptr<Expression> r) : op(std::move(o)), right(std::move(r)) {}
+    UnaryExpression(std::string o, std::shared_ptr<Expression> r) : Expression(ExpressionKind::Unary), op(std::move(o)), right(std::move(r)) {}
     Value evaluate(Interpreter &interp, std::shared_ptr<Environment> env) override {
         Value r = right->evaluate(interp, env);
         if (op == "-") {
@@ -441,7 +548,7 @@ struct BinaryExpression : public Expression {
     std::string op;
     std::shared_ptr<Expression> right;
     BinaryExpression(std::shared_ptr<Expression> l, std::string o, std::shared_ptr<Expression> r)
-        : left(std::move(l)), op(std::move(o)), right(std::move(r)) {}
+        : Expression(ExpressionKind::Binary), left(std::move(l)), op(std::move(o)), right(std::move(r)) {}
     Value evaluate(Interpreter &, std::shared_ptr<Environment> env) override;
 };
 
@@ -449,21 +556,21 @@ struct CallExpression : public Expression {
     std::shared_ptr<Expression> callee;
     std::vector<std::shared_ptr<Expression>> args;
     CallExpression(std::shared_ptr<Expression> c, std::vector<std::shared_ptr<Expression>> a)
-        : callee(std::move(c)), args(std::move(a)) {}
+        : Expression(ExpressionKind::Call), callee(std::move(c)), args(std::move(a)) {}
     Value evaluate(Interpreter &interp, std::shared_ptr<Environment> env) override;
 };
 
 struct AttributeExpression : public Expression {
     std::shared_ptr<Expression> base;
     std::string name;
-    AttributeExpression(std::shared_ptr<Expression> b, std::string n) : base(std::move(b)), name(std::move(n)) {}
+    AttributeExpression(std::shared_ptr<Expression> b, std::string n) : Expression(ExpressionKind::Attribute), base(std::move(b)), name(std::move(n)) {}
     Value evaluate(Interpreter &interp, std::shared_ptr<Environment> env) override;
 };
 
 struct IndexExpression : public Expression {
     std::shared_ptr<Expression> base;
     std::shared_ptr<Expression> index;
-    IndexExpression(std::shared_ptr<Expression> b, std::shared_ptr<Expression> i) : base(std::move(b)), index(std::move(i)) {}
+    IndexExpression(std::shared_ptr<Expression> b, std::shared_ptr<Expression> i) : Expression(ExpressionKind::Index), base(std::move(b)), index(std::move(i)) {}
     Value evaluate(Interpreter &interp, std::shared_ptr<Environment> env) override;
 };
 
@@ -471,7 +578,7 @@ struct ListExpression : public Expression {
     std::vector<std::shared_ptr<Expression>> elements;
     ValueKind containerKind;
     explicit ListExpression(std::vector<std::shared_ptr<Expression>> elts, ValueKind kind = ValueKind::List)
-        : elements(std::move(elts)), containerKind(kind) {}
+        : Expression(ExpressionKind::List), elements(std::move(elts)), containerKind(kind) {}
     Value evaluate(Interpreter &interp, std::shared_ptr<Environment> env) override {
         std::vector<Value> values;
         for (const auto &expr : elements) {
@@ -503,14 +610,14 @@ struct ListExpression : public Expression {
 struct DictExpression : public Expression {
     std::vector<std::pair<std::shared_ptr<Expression>, std::shared_ptr<Expression>>> pairs;
     explicit DictExpression(std::vector<std::pair<std::shared_ptr<Expression>, std::shared_ptr<Expression>>> p)
-        : pairs(std::move(p)) {}
+        : Expression(ExpressionKind::Dict), pairs(std::move(p)) {}
     Value evaluate(Interpreter &interp, std::shared_ptr<Environment> env) override;
 };
 
 struct LambdaExpression : public Expression {
     std::vector<std::string> params;
     std::shared_ptr<Expression> body;
-    explicit LambdaExpression(std::vector<std::string> p, std::shared_ptr<Expression> b) : params(std::move(p)), body(std::move(b)) {}
+    explicit LambdaExpression(std::vector<std::string> p, std::shared_ptr<Expression> b) : Expression(ExpressionKind::Lambda), params(std::move(p)), body(std::move(b)) {}
     Value evaluate(Interpreter &interp, std::shared_ptr<Environment> env) override;
 };
 
@@ -522,8 +629,47 @@ struct ReturnStatement : public Statement {
         res.hasReturn = true;
         if (value) {
             res.returnValue = value->evaluate(interp, env);
+
+            // Check return type if function has type annotation
+            if (interp.currentFunctionReturnType) {
+                if (!typeMatches(res.returnValue, interp.currentFunctionReturnType)) {
+                    Serial.print(F("[TypthonMini] Return type error: expected "));
+                    Serial.print(interp.currentFunctionReturnType->toString().c_str());
+                    Serial.print(F(", got "));
+                    Serial.println(valueKindToString(res.returnValue.kind));
+                    res.returnValue = Value::makeNone();
+                }
+            }
+        } else {
+            res.returnValue = Value::makeNone();
         }
         return res;
+    }
+
+private:
+    static bool typeMatches(const Value &val, const std::shared_ptr<Type> &type) {
+        if (!type) return true;
+        switch (type->kind) {
+            case TypeKind::Int: return val.kind == ValueKind::Number;
+            case TypeKind::Str: return val.kind == ValueKind::Text;
+            case TypeKind::Bool: return val.kind == ValueKind::Boolean;
+            case TypeKind::List: return val.kind == ValueKind::List;
+            case TypeKind::Dict: return val.kind == ValueKind::Dict;
+            case TypeKind::None: return val.kind == ValueKind::None;
+            default: return true;
+        }
+    }
+
+    static const char* valueKindToString(ValueKind kind) {
+        switch (kind) {
+            case ValueKind::Number: return "int";
+            case ValueKind::Text: return "str";
+            case ValueKind::Boolean: return "bool";
+            case ValueKind::List: return "list";
+            case ValueKind::Dict: return "dict";
+            case ValueKind::None: return "None";
+            default: return "unknown";
+        }
     }
 };
 
@@ -563,6 +709,60 @@ struct AssignmentStatement : public Statement {
     AssignmentStatement(std::shared_ptr<Expression> t, std::string o, std::shared_ptr<Expression> v)
         : target(std::move(t)), op(std::move(o)), value(std::move(v)) {}
     ExecutionResult execute(Interpreter &interp, std::shared_ptr<Environment> env) override;
+};
+
+struct TypedAssignmentStatement : public Statement {
+    std::shared_ptr<Expression> target;
+    std::shared_ptr<Type> declaredType;
+    std::shared_ptr<Expression> value;
+
+    TypedAssignmentStatement(std::shared_ptr<Expression> t, std::shared_ptr<Type> dt, std::shared_ptr<Expression> v)
+        : target(std::move(t)), declaredType(std::move(dt)), value(std::move(v)) {}
+
+    ExecutionResult execute(Interpreter &interp, std::shared_ptr<Environment> env) override {
+        Value rhs = value->evaluate(interp, env);
+
+        // Type check the value
+        if (!typeMatches(rhs, declaredType)) {
+            Serial.print(F("[TypthonMini] Type error: expected "));
+            Serial.print(declaredType->toString().c_str());
+            Serial.print(F(", got "));
+            Serial.println(valueKindToString(rhs.kind));
+            return {};
+        }
+
+        if (target->kind == ExpressionKind::Variable) {
+            auto var = std::static_pointer_cast<VariableExpression>(target);
+            env->define(var->name, rhs);
+            env->types[var->name] = declaredType;
+        }
+        return {};
+    }
+
+private:
+    static bool typeMatches(const Value &val, const std::shared_ptr<Type> &type) {
+        switch (type->kind) {
+            case TypeKind::Int: return val.kind == ValueKind::Number;
+            case TypeKind::Str: return val.kind == ValueKind::Text;
+            case TypeKind::Bool: return val.kind == ValueKind::Boolean;
+            case TypeKind::List: return val.kind == ValueKind::List;
+            case TypeKind::Dict: return val.kind == ValueKind::Dict;
+            case TypeKind::None: return val.kind == ValueKind::None;
+            default: return false;
+        }
+    }
+
+    static const char* valueKindToString(ValueKind kind) {
+        switch (kind) {
+            case ValueKind::Number: return "int";
+            case ValueKind::Text: return "str";
+            case ValueKind::Boolean: return "bool";
+            case ValueKind::List: return "list";
+            case ValueKind::Dict: return "dict";
+            case ValueKind::None: return "None";
+            default: return "unknown";
+        }
+    }
 };
 
 struct IfStatement : public Statement {
@@ -723,6 +923,39 @@ struct ClassDefStatement : public Statement {
     std::vector<std::shared_ptr<Statement>> body;
     explicit ClassDefStatement(std::string n, std::vector<std::shared_ptr<Statement>> b) : name(std::move(n)), body(std::move(b)) {}
     ExecutionResult execute(Interpreter &, std::shared_ptr<Environment> env) override;
+};
+
+struct TypedFunctionDefStatement : public Statement {
+    std::string name;
+    std::vector<std::string> params;
+    std::vector<std::shared_ptr<Type>> paramTypes;
+    std::shared_ptr<Type> returnType;
+    std::vector<std::shared_ptr<Statement>> body;
+
+    TypedFunctionDefStatement(std::string n, std::vector<std::string> p,
+                             std::vector<std::shared_ptr<Type>> pt,
+                             std::shared_ptr<Type> rt,
+                             std::vector<std::shared_ptr<Statement>> b)
+        : name(std::move(n)), params(std::move(p)), paramTypes(std::move(pt)),
+          returnType(std::move(rt)), body(std::move(b)) {}
+
+    ExecutionResult execute(Interpreter &, std::shared_ptr<Environment> env) override {
+        auto fn = std::make_shared<FunctionObject>();
+        fn->parameters = params;
+        fn->parameterTypes = paramTypes;
+        fn->returnType = returnType;
+        fn->body = body;
+        fn->closure = env;
+        fn->isLambda = false;
+
+        Value fnVal = Value::makeFunction(fn);
+        env->define(name, fnVal);
+
+        // Store function type in environment
+        env->types[name] = Type::makeFunction(paramTypes, returnType);
+
+        return {};
+    }
 };
 
 Interpreter::Interpreter(const char *source) : tokenizer(source), globals(std::make_shared<Environment>()) {
@@ -931,6 +1164,27 @@ std::shared_ptr<Statement> Interpreter::parsePass() {
 std::shared_ptr<Statement> Interpreter::parseAssignmentOrExpr() {
     auto expr = parseExpression();
     Token t = peek();
+
+    // Check for type annotation: name: type = value
+    if (t.type == Token::Type::Symbol && t.text == ":") {
+        // This must be a variable expression for typed assignment
+        if (expr->kind != ExpressionKind::Variable) {
+            printError("Type annotations only allowed on simple variables");
+            return std::make_shared<ExpressionStatement>(expr);
+        }
+
+        consume(); // consume ':'
+        auto typeAnnotation = parseType();
+
+        if (!match(Token::Type::Operator, "=")) {
+            printError("Expected = after type annotation");
+        }
+        auto valueExpr = parseExpression();
+        match(Token::Type::Newline);
+
+        return std::make_shared<TypedAssignmentStatement>(expr, typeAnnotation, valueExpr);
+    }
+
     if (t.type == Token::Type::Operator &&
         (t.text == "=" || t.text == "+=" || t.text == "-=" || t.text == "*=" || t.text == "/=" || t.text == "%=" ||
          t.text == "//=" || t.text == "**=")) {
@@ -1142,7 +1396,7 @@ std::shared_ptr<Statement> Interpreter::parseNonlocal() {
 }
 
 std::shared_ptr<Statement> Interpreter::parseDef() {
-    consume();
+    consume();  // consume 'def'
     Token nameTok = consume();
     if (nameTok.type != Token::Type::Identifier) {
         printError("Expected function name");
@@ -1151,7 +1405,10 @@ std::shared_ptr<Statement> Interpreter::parseDef() {
     if (!match(Token::Type::Symbol, "(")) {
         printError("Expected (");
     }
+
     std::vector<std::string> params;
+    std::vector<std::shared_ptr<Type>> paramTypes;
+
     Token nextTok = peek();
     if (!(nextTok.type == Token::Type::Symbol && nextTok.text == ")")) {
         do {
@@ -1161,17 +1418,62 @@ std::shared_ptr<Statement> Interpreter::parseDef() {
                 break;
             }
             params.push_back(paramTok.text);
+
+            // Parse type annotation: param: type
+            if (match(Token::Type::Symbol, ":")) {
+                auto paramType = parseType();
+                paramTypes.push_back(paramType);
+            } else {
+                // No type annotation - use old behavior
+                paramTypes.push_back(nullptr);
+            }
         } while (match(Token::Type::Symbol, ","));
     }
+
     if (!match(Token::Type::Symbol, ")")) {
         printError("Expected ) after parameters");
     }
+
+    // Parse return type annotation: -> type
+    std::shared_ptr<Type> returnType = nullptr;
+    if (match(Token::Type::Operator, "-")) {
+        if (match(Token::Type::Operator, ">")) {
+            returnType = parseType();
+        } else {
+            printError("Expected > after - for return type");
+        }
+    }
+
     if (!match(Token::Type::Symbol, ":")) {
         printError("Expected : after function header");
     }
     match(Token::Type::Newline);
     auto suite = parseSuite();
-    return std::make_shared<FunctionDefStatement>(nameTok.text, params, suite);
+
+    // Check if we have any type annotations
+    bool hasTypeAnnotations = returnType != nullptr;
+    for (const auto &pt : paramTypes) {
+        if (pt != nullptr) {
+            hasTypeAnnotations = true;
+            break;
+        }
+    }
+
+    if (hasTypeAnnotations) {
+        // Fill in missing types with None type
+        for (auto &pt : paramTypes) {
+            if (pt == nullptr) {
+                pt = Type::makeNone();
+            }
+        }
+        if (returnType == nullptr) {
+            returnType = Type::makeNone();
+        }
+        return std::make_shared<TypedFunctionDefStatement>(nameTok.text, params, paramTypes, returnType, suite);
+    } else {
+        // No type annotations, use old FunctionDefStatement
+        return std::make_shared<FunctionDefStatement>(nameTok.text, params, suite);
+    }
 }
 
 std::shared_ptr<Statement> Interpreter::parseClass() {
@@ -1457,6 +1759,31 @@ std::shared_ptr<Expression> Interpreter::parsePrimary() {
     return std::make_shared<LiteralExpression>(Value::makeNone());
 }
 
+std::shared_ptr<Type> Interpreter::parseType() {
+    Token t = consume();
+    if (t.type != Token::Type::Identifier) {
+        printError("Expected type name");
+        return Type::makeNone();
+    }
+
+    if (t.text == "int") {
+        return Type::makeInt();
+    } else if (t.text == "str") {
+        return Type::makeStr();
+    } else if (t.text == "bool") {
+        return Type::makeBool();
+    } else if (t.text == "list") {
+        return Type::makeList(nullptr);
+    } else if (t.text == "dict") {
+        return Type::makeDict(nullptr, nullptr);
+    } else if (t.text == "None") {
+        return Type::makeNone();
+    } else {
+        printError("Unknown type");
+        return Type::makeNone();
+    }
+}
+
 ExecutionResult Interpreter::executeBlock(const std::vector<std::shared_ptr<Statement>> &stmts,
                                           std::shared_ptr<Environment> env) {
     for (const auto &stmt : stmts) {
@@ -1615,6 +1942,28 @@ Value CallExpression::evaluate(Interpreter &interp, std::shared_ptr<Environment>
     for (const auto &arg : args) {
         evaluatedArgs.push_back(arg->evaluate(interp, env));
     }
+
+    // Type check if function has type annotations
+    if (calleeVal.kind == ValueKind::Function && calleeVal.function) {
+        const auto &paramTypes = calleeVal.function->parameterTypes;
+        if (!paramTypes.empty()) {
+            if (evaluatedArgs.size() != paramTypes.size()) {
+                printError("Wrong number of arguments");
+                return Value::makeNone();
+            }
+
+            for (size_t i = 0; i < evaluatedArgs.size(); i++) {
+                if (!typeMatchesValue(paramTypes[i], evaluatedArgs[i])) {
+                    Serial.print(F("[TypthonMini] Argument type error at position "));
+                    Serial.print((int)i);
+                    Serial.print(F(": expected "));
+                    Serial.println(paramTypes[i]->toString().c_str());
+                    return Value::makeNone();
+                }
+            }
+        }
+    }
+
     return interp.callFunction(calleeVal, evaluatedArgs);
 }
 
@@ -1682,8 +2031,25 @@ Value LambdaExpression::evaluate(Interpreter &interp, std::shared_ptr<Environmen
 ExecutionResult AssignmentStatement::execute(Interpreter &interp, std::shared_ptr<Environment> env) {
     Value rhs = value->evaluate(interp, env);
     // Only support simple targets
-    if (auto var = std::dynamic_pointer_cast<VariableExpression>(target)) {
+    if (target->kind == ExpressionKind::Variable) {
+        auto var = std::static_pointer_cast<VariableExpression>(target);
         Value *slot = locateWithDeclarations(env, var->name);
+
+        // Check if variable has a declared type
+        auto typeIt = env->types.find(var->name);
+        if (typeIt != env->types.end()) {
+            // Variable has a type - enforce it
+            if (!typeMatches(rhs, typeIt->second)) {
+                Serial.print(F("[TypthonMini] Type error: variable '"));
+                Serial.print(var->name.c_str());
+                Serial.print(F("' has type "));
+                Serial.print(typeIt->second->toString().c_str());
+                Serial.print(F(", cannot assign "));
+                Serial.println(valueKindToString(rhs.kind));
+                return {};
+            }
+        }
+
         if (slot) {
             if (op == "=") {
                 if (slot->kind != rhs.kind && slot->kind != ValueKind::None) {
@@ -1709,23 +2075,24 @@ ExecutionResult AssignmentStatement::execute(Interpreter &interp, std::shared_pt
                 printError("Nonlocal variable not found");
                 return {};
             }
-            if (containsName(env->globalsDeclared, var->name)) {
-                auto root = findRootEnv(env);
-                root->define(var->name, rhs);
-            } else {
-                env->define(var->name, rhs);
-            }
+
+            // New variable without type annotation - error in strict mode
+            printError("Variable must have type annotation in strict mode");
+            return {};
         }
         return {};
     }
-    if (auto attr = std::dynamic_pointer_cast<AttributeExpression>(target)) {
+    if (target->kind == ExpressionKind::Attribute) {
+        auto attr = std::static_pointer_cast<AttributeExpression>(target);
         Value base = attr->base->evaluate(interp, env);
         interp.setAttribute(base, attr->name, rhs);
         return {};
     }
-    if (auto idx = std::dynamic_pointer_cast<IndexExpression>(target)) {
+    if (target->kind == ExpressionKind::Index) {
+        auto idx = std::static_pointer_cast<IndexExpression>(target);
         Value idxVal = idx->index->evaluate(interp, env);
-        if (auto baseVar = std::dynamic_pointer_cast<VariableExpression>(idx->base)) {
+        if (idx->base->kind == ExpressionKind::Variable) {
+            auto baseVar = std::static_pointer_cast<VariableExpression>(idx->base);
             Value *container = env->locate(baseVar->name);
             if (!container) {
                 printError("Unknown container for index assignment");
@@ -1766,7 +2133,8 @@ ExecutionResult AssignmentStatement::execute(Interpreter &interp, std::shared_pt
             printError("Index assignment only supports list or dict");
             return {};
         }
-        if (auto attrBase = std::dynamic_pointer_cast<AttributeExpression>(idx->base)) {
+        if (idx->base->kind == ExpressionKind::Attribute) {
+            auto attrBase = std::static_pointer_cast<AttributeExpression>(idx->base);
             Value inst = attrBase->base->evaluate(interp, env);
             Value container = interp.getAttribute(inst, attrBase->name);
             if (container.kind == ValueKind::List) {
@@ -1972,7 +2340,16 @@ Value Interpreter::callFunction(const Value &callable, const std::vector<Value> 
             printError("Argument count mismatch");
             return Value::makeNone();
         }
+
+        // Set current function return type for type checking
+        auto previousReturnType = currentFunctionReturnType;
+        currentFunctionReturnType = fn->returnType;
+
         ExecutionResult res = executeBlock(fn->body, local);
+
+        // Restore previous return type
+        currentFunctionReturnType = previousReturnType;
+
         if (res.hasReturn) {
             return res.returnValue;
         }

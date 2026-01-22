@@ -1,36 +1,58 @@
 // Typthon demo sketch that uses the TypthonMini Arduino library with a typed Python-esque runtime.
+//
+// IMPORTANT: This sketch requires a board with C++ Standard Library support.
+// Compatible boards: ESP32, ESP8266, Arduino Due, Arduino Zero, Arduino UNO R4, Raspberry Pi Pico (RP2040), STM32
+// NOT compatible with: Arduino Uno (classic), Nano, Mega (AVR architecture lacks STL support)
+//
 #include <Arduino.h>
 #include <TypthonMini.h>
 
 using typthon::Interpreter;
 
 const char *demoScript = R"PY(
-# Demonstrate strict TypthonMini features: lists, dicts, lambdas, defs, classes
-numbers = [1, 2, 3]
-text_label = "counter"
+# Typthon: Strictly-typed Python
+# All variables and functions MUST have type annotations
 
-adder = lambda x, y: x + y
+# Typed variable declarations
+x: int = 42
+name: str = "Typthon"
+flag: bool = True
 
-def combine(values, extra):
-    summed = adder(values[0], values[1])
-    total = summed + extra
-    return [summed, total]
+print("Integer:", x)
+print("String:", name)
+print("Boolean:", flag)
 
-class Counter:
-    def __init__(self, start):
-        self.value = start
-    def increment(self, delta):
-        self.value = self.value + delta
-        return self.value
+# Typed function with parameter and return type annotations
+def add_numbers(a: int, b: int) -> int:
+    result: int = a + b
+    return result
 
-tracker = Counter(10)
-new_numbers = numbers + [adder(4, 5)]
-combined = combine(new_numbers, 7)
-state = {"label": text_label, "latest": tracker.increment(3), "values": combined}
+sum_val: int = add_numbers(10, 20)
+print("Sum:", sum_val)
 
-print("Numbers:", new_numbers)
-print("Combined:", combined)
-print(state["label"], state["latest"])
+# Another typed function
+def greet(name: str) -> str:
+    greeting: str = "Hello, "
+    message: str = greeting + name
+    return message
+
+msg: str = greet("Arduino")
+print(msg)
+
+# Type checking examples
+def multiply(x: int, y: int) -> int:
+    product: int = x * y
+    return product
+
+result: int = multiply(7, 6)
+print("Product:", result)
+
+# Lists with homogeneous types
+numbers: list = [1, 2, 3]
+print("Numbers:", numbers)
+
+# NOTE: Advanced features like list[int], dict[str,int], and classes
+# will be demonstrated once generic type parsing is complete
 )PY";
 
 void setup() {
